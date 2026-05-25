@@ -1,0 +1,254 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=blue!60!black,
+  urlcolor=blue!60!black,
+  pdftitle={What Determines Long-Context Ability in LLMs?},
+  pdfauthor={NLP Course Project Draft}
+}
+
+\title{\textbf{What Determines Long-Context Ability in LLMs?}\\
+\large A Survey with Experimental Analysis}
+\author{Draft for NLP Course Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Long-context ability has become a central theme in modern large language models (LLMs), yet the field still lacks a stable answer to a deceptively simple question: what does it actually mean for a model to \emph{use} long context well? Larger context windows alone are not sufficient. A model may accept 128K or even million-token inputs, while still degrading on retrieval from the middle of a document, on multi-hop aggregation across distant spans, or under realistic serving constraints. This report surveys long-context LLMs through a unified lens that separates five factors: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. We review architectural routes for long-sequence modeling, context extension methods built on top of Transformer backbones, retrieval and memory augmentation, and system techniques such as IO-aware attention and KV-cache management. We further compare the evaluation landscape, from Needle-in-a-Haystack and position-sensitivity tests to RULER, LongBench, $\infty$Bench, BABILong, L-Eval, and LongBench v2. Finally, we formulate a full experimental plan that is explicitly designed to disentangle whether long-context failure is primarily a retrieval problem, a reasoning problem, an inference-time extension problem, or a serving problem. Our main claim is that long-context ability is not a single scalar property but a joint outcome of model design, prompting and retrieval strategy, task structure, and system implementation.
+\end{abstract}
+
+\section{Introduction}
+Large language models are increasingly deployed in settings that are inherently long-context: document question answering, multi-document synthesis, repository-scale code understanding, long-horizon agent memory, and structured analysis over extended logs or tables. These scenarios have driven rapid progress in nominal context windows, from a few thousand tokens to 32K, 128K, and even million-token regimes in both commercial and open models. However, the field has also accumulated substantial evidence that accepting longer inputs is not equivalent to using them effectively \citep{liu2024lost, hsieh2024ruler, bai2024longbench, kuratov2024babilong, bai2025longbenchv2}.
+
+This mismatch appears in several ways. Position-sensitive evaluations show that models often underuse information placed in the middle of long prompts \citep{liu2024lost}. Synthetic benchmarks beyond single-needle retrieval reveal a significant gap between claimed context length and effective context length \citep{hsieh2024ruler}. Realistic multi-task evaluations suggest that deeper reasoning, rather than nominal window size alone, has become the main bottleneck in long-context settings \citep{bai2025longbenchv2}. At the same time, systems work has shown that long-context deployment is strongly constrained by prefill latency, KV-cache growth, and batching efficiency, even when the underlying model is theoretically capable of longer inputs \citep{dao2022flashattention, kwon2023pagedattention, zheng2024sglang}.
+
+This report is organized around a single question: \emph{what determines long-context ability in LLMs?} Instead of treating long context as one monolithic capability, we decompose it into five dimensions:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Nominal context length}: how many tokens the model and serving stack claim to support.
+  \item \textbf{Effective retrieval length}: how far relevant information can be reliably retrieved.
+  \item \textbf{Long-range reasoning ability}: whether the model can aggregate, compare, and reason over distant evidence.
+  \item \textbf{Inference-time extension effectiveness}: how much performance can be improved without retraining the backbone from scratch.
+  \item \textbf{System serving efficiency}: whether the model can be run with acceptable latency, memory, and throughput.
+\end{enumerate}
+
+The rest of the report follows this analytical lens. Section~\ref{sec:framework} formalizes the framework. Sections~\ref{sec:modeling}--\ref{sec:systems} survey modeling, extension, retrieval, and systems techniques. Section~\ref{sec:evaluation} reviews benchmarks and what they actually measure. Section~\ref{sec:experiments} proposes a complete experimental design for the course project. We conclude with a discussion of open challenges and a synthesis of current evidence.
+
+\section{Problem Formulation and Analytical Framework}
+\label{sec:framework}
+
+\subsection{Why context window size is not enough}
+Context window size is best understood as a necessary but insufficient condition. A larger window makes it \emph{possible} to provide more evidence to the model, but it says little about whether the model can retrieve the right facts, combine them correctly, or do so under realistic latency and memory budgets. This distinction has become clearer as long-context evaluations evolved from simple passkey or single-needle retrieval to richer tests of aggregation and multi-hop tracing \citep{hsieh2024ruler, zhang2024infinitebench, kuratov2024babilong}.
+
+\subsection{A five-dimensional view of long-context ability}
+We define long-context ability as the model's capacity to preserve useful performance as input length grows along five coupled dimensions.
+
+\paragraph{Nominal context length.}
+This is the maximum context size advertised by a model or infrastructure stack. It is influenced by positional encoding, training length, implementation choices, and serving software. It answers ``can the input be admitted?'' but not ``can the input be used well?''
+
+\paragraph{Effective retrieval length.}
+This is the largest length regime at which relevant information can still be found reliably. Needle-in-a-Haystack, key-value retrieval, and retrieval-focused RULER tasks are natural measurement tools here \citep{liu2024lost, hsieh2024ruler}.
+
+\paragraph{Long-range reasoning ability.}
+This dimension concerns multi-hop chaining, cross-segment aggregation, comparison, and variable tracking over distant evidence. Recent benchmarks increasingly suggest that this is the hardest long-context sub-problem \citep{hsieh2024ruler, kuratov2024babilong, bai2025longbenchv2}.
+
+\paragraph{Inference-time extension effectiveness.}
+Many practical approaches do not redesign the architecture from scratch, but instead modify positional scaling, chunk the input, manage cache selectively, or introduce memory-like mechanisms at inference time \citep{chen2023pi, peng2023yarn, ding2024longrope, xiao2023streamingllm, jin2024selfextend, xiao2024infllm}. Their value lies in how much effective context they recover per unit implementation complexity.
+
+\paragraph{System serving efficiency.}
+In production and in realistic experiments, long context is constrained by prefill time, decode throughput, peak memory, cache reuse, and batching efficiency. System work is therefore not just a deployment detail; it determines what long-context regimes are empirically reachable \citep{dao2022flashattention, dao2023flashattention2, kwon2023pagedattention, zheng2024sglang}.
+
+\subsection{Main thesis}
+The core thesis of this report is that long-context ability is a \emph{joint property} of model architecture, inference strategy, task type, and system realization. A model can be strong on one dimension and weak on another. For example, it may preserve single-needle retrieval but fail on aggregation, or it may reason well at moderate length but become unusably slow under realistic serving constraints.
+
+\section{Technical Foundations of Long-Context Modeling}
+\label{sec:modeling}
+
+\subsection{The standard Transformer bottleneck}
+The modern discussion starts from the success of the Transformer \citep{vaswani2017attention}. Full self-attention offers flexible content-based interaction but incurs quadratic time and memory complexity in sequence length. In long-context regimes, the bottleneck is not only arithmetic complexity; memory traffic and KV-cache growth become equally important \citep{dao2022flashattention}.
+
+\subsection{Sparse and local-global attention}
+One classical route is to reduce the interaction graph. Longformer combines local sliding-window attention with task-motivated global tokens, achieving linear scaling in sequence length for many practical settings \citep{beltagy2020longformer}. BigBird augments local attention with random and global connections and shows that sparse structures can preserve strong theoretical properties while enabling much longer inputs \citep{zaheer2020bigbird}. These models demonstrate that many document tasks do not require fully dense attention at every layer and every position.
+
+The limitation is that a fixed sparsity pattern can miss task-specific long-range dependencies. Sparse and local-global schemes often help tractability first, while their success on complex reasoning depends on careful mask design and training conditions.
+
+\subsection{Linear-time, low-rank, and kernelized alternatives}
+Another route is to approximate or reformulate attention itself. This broad family includes low-rank methods, kernelized attention, and recurrent-style sequence models. While these approaches reduce asymptotic cost, the key practical question is whether they retain the content selectivity that makes Transformers so strong in language modeling.
+
+This tension becomes especially visible in recent work on state-space and recurrent models. Mamba introduces selective state spaces, arguing that prior linear-time approaches underperform on language partly because they lacked strong input-dependent state updates \citep{gu2023mamba}. Mamba-2 then reframes the relationship between Transformers and state-space models through structured state space duality, further improving efficiency and implementation simplicity \citep{dao2024mamba2}. Hybrid models such as Jamba suggest that the practical frontier may lie not in replacing attention everywhere, but in combining a small amount of precise attention with more efficient recurrent or state-space computation \citep{lieber2024jamba}. More recent linear recurrent designs such as Gated DeltaNet further strengthen this line by explicitly targeting retrieval and long-context weaknesses in Mamba-like models \citep{yang2024gateddeltanet}.
+
+\subsection{Implication for long-context research}
+Architectural work addresses a fundamental question: how can sequence models scale beyond the quadratic regime without giving up too much content-based access? The current evidence suggests a nuanced answer. Pure linear or recurrent models can offer substantial efficiency gains, but the strongest long-context behavior often still benefits from some form of exact or near-exact retrieval path, whether through attention, hybridization, or external memory.
+
+\section{Inference-Time Extension, Retrieval, and Memory Augmentation}
+\label{sec:extension}
+
+\subsection{Positional extension and RoPE-based scaling}
+Many practical long-context methods keep the Transformer backbone intact and instead modify the positional mechanism. ALiBi demonstrates that a simple linear distance bias can support test-time extrapolation to longer inputs than seen in training \citep{press2022alibi}. In the RoPE family, Position Interpolation rescales positions back into the original training range, substantially stabilizing long-context extension with minimal fine-tuning \citep{chen2023pi}. YaRN improves the efficiency of such extension, while LongRoPE pushes this paradigm to much larger windows through non-uniform interpolation and progressive extension \citep{peng2023yarn, ding2024longrope}.
+
+These methods matter because they are cheap relative to retraining a new backbone. However, they mainly answer ``how do we feed longer inputs?'' rather than ``how do we reason over them?'' The distinction is crucial for interpreting benchmark gains.
+
+\subsection{Training-free and low-cost inference-time strategies}
+StreamingLLM observes that only a few early ``attention sink'' tokens, together with a recent sliding window, can stabilize streaming inference without retraining \citep{xiao2023streamingllm}. Self-Extend proposes a tuning-free method that reorganizes attention into grouped and neighbor patterns to enlarge usable context \citep{jin2024selfextend}. InfLLM builds an efficient context memory to enable training-free extrapolation to much longer sequences \citep{xiao2024infllm}. These methods are attractive for a course project because they expose long-context trade-offs without requiring frontier-scale pretraining.
+
+\subsection{Retrieval augmentation and hierarchical context organization}
+Retrieval remains essential even in the era of large windows. LongBench already showed that retrieval and compression can help weaker long-context models, although they do not fully substitute for intrinsically stronger long-context understanding \citep{bai2024longbench}. More recent work rethinks the granularity and structure of retrieval itself. RAPTOR organizes documents through recursive abstraction for tree-structured retrieval \citep{sarthi2024raptor}. LongRAG argues that stronger readers make much larger retrieval units feasible and sometimes preferable \citep{wang2024longrag}. Anthropic's contextual retrieval further emphasizes that retrieval quality depends on preserving local context around chunks, rather than embedding isolated fragments alone \citep{anthropic2024contextualretrieval}.
+
+\subsection{What these methods really change}
+Inference-time extension, retrieval, and memory augmentation do not all solve the same problem. Positional extension changes admissible length. Streaming and memory strategies change what is retained and revisited. Retrieval changes which evidence is surfaced in the first place. In other words, they target different failure modes within long-context ability and should not be evaluated with a single metric.
+
+\section{Systems for Long-Context LLMs}
+\label{sec:systems}
+
+\subsection{Why systems deserve a first-class role}
+Long-context research often foregrounds architecture and benchmark accuracy, but real deployment is frequently dominated by system constraints. If prefill is too slow, if KV-cache memory prevents useful batching, or if cache reuse is poor across repeated prefixes, then nominal context support has limited practical value.
+
+\subsection{IO-aware attention and kernel optimization}
+FlashAttention reframed attention as an IO problem, showing that reducing high-bandwidth-memory traffic yields large practical gains without approximating the attention computation \citep{dao2022flashattention}. FlashAttention-2 further improves parallelism and work partitioning, pushing exact attention closer to hardware limits \citep{dao2023flashattention2}. These results matter for long context because they lower the constant factors that otherwise make even exact attention impractical at scale.
+
+\subsection{KV-cache management and serving engines}
+PagedAttention and vLLM address a central bottleneck in autoregressive serving: the dynamic and memory-hungry KV cache. By managing KV memory like virtual memory pages, vLLM substantially improves throughput, especially at longer sequence lengths \citep{kwon2023pagedattention}. SGLang extends the systems perspective beyond one-shot decoding, introducing RadixAttention for efficient prefix reuse across structured language-model programs \citep{zheng2024sglang}. This is especially relevant for agentic and multi-step pipelines, where repeated long prefixes are common.
+
+\subsection{Serving metrics as part of long-context ability}
+From a system perspective, the natural metrics are time-to-first-token, prefill latency, decode throughput, peak memory, batch scalability, and cache reuse efficiency. These are not merely engineering details appended after accuracy evaluation. They determine which context lengths are usable and whether a model is competitive in realistic settings.
+
+\section{Evaluation of Long-Context Ability}
+\label{sec:evaluation}
+
+\subsection{From retrieval sanity checks to deeper reasoning tests}
+Evaluation has matured from simple retrieval tests to increasingly realistic multi-task reasoning benchmarks. Needle-in-a-Haystack and related key-value retrieval tasks are useful sanity checks, but they are too narrow to define long-context ability by themselves \citep{liu2024lost}. Indeed, position-sensitivity analysis shows that even models with long context windows may systematically underuse information placed in the middle of prompts \citep{liu2024lost}.
+
+\subsection{Synthetic but harder benchmarks}
+RULER is a major step beyond single-needle testing. It introduces configurable synthetic tasks spanning retrieval, aggregation, and tracing, and explicitly emphasizes the distinction between claimed and effective context size \citep{hsieh2024ruler}. $\infty$Bench pushes evaluation beyond 100K tokens and combines synthetic and realistic tasks, highlighting that current models still struggle in truly long regimes \citep{zhang2024infinitebench}. BABILong makes the reasoning challenge sharper still by scattering relevant facts through extremely long natural text and measuring whether models can chain them reliably \citep{kuratov2024babilong}.
+
+\subsection{Realistic long-context benchmarks}
+LongBench provides a bilingual, multi-task benchmark spanning question answering, summarization, few-shot learning, synthetic tasks, and code completion \citep{bai2024longbench}. L-Eval contributes not only datasets but also a methodological warning: traditional n-gram overlap is often misaligned with long-form answer quality, so long-context evaluation may require stronger judges and better instructions \citep{an2023leval}. LongBench v2 raises the bar further by focusing on realistic multi-task problems that demand deeper understanding and reasoning, suggesting that the next bottleneck is not merely feeding longer documents, but reasoning effectively once they are available \citep{bai2025longbenchv2}.
+
+\subsection{Benchmark-to-capability mapping}
+An important methodological lesson is that benchmarks measure different slices of long-context ability:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Needle-in-a-Haystack / key-value retrieval}: basic retrieval and position robustness.
+  \item \textbf{Lost in the Middle}: positional sensitivity under long inputs.
+  \item \textbf{RULER retrieval tasks}: effective retrieval length.
+  \item \textbf{RULER aggregation and tracing}: long-range reasoning over synthetic evidence.
+  \item \textbf{LongBench / LongBench v2}: realistic long-context understanding and reasoning.
+  \item \textbf{Serving benchmarks}: practical utility under latency and memory constraints.
+\end{itemize}
+
+This mapping is critical for experiment design. Without it, one may overgeneralize from a benchmark that measures only one sub-skill.
+
+\section{Experimental Analysis Plan}
+\label{sec:experiments}
+
+\subsection{Goal of the experimental section}
+The experimental section of the course project should not aim to produce another generic leaderboard. Its purpose is to answer a sharper question: \emph{when long-context performance fails, which factor fails first?} To make that question operational, we propose a complete experiment matrix that disentangles retrieval, reasoning, inference-time extension, and system serving.
+
+\subsection{Research questions}
+We recommend structuring the experiments around the following research questions:
+\begin{description}[leftmargin=1.5em, style=nextline]
+  \item[RQ1] Does long-context degradation appear first as retrieval failure or as reasoning failure?
+  \item[RQ2] How much can inference-time extension improve effective context length without retraining the base model?
+  \item[RQ3] Do different benchmarks agree on what it means for a model to be good at long context?
+  \item[RQ4] Under realistic serving setups, do latency, memory, and throughput become the dominant bottlenecks before benchmark accuracy does?
+\end{description}
+
+\subsection{Recommended model and system choices}
+A practical primary model is a 7B--8B instruction-tuned checkpoint with an established ecosystem, such as Llama 3.1 8B Instruct or a Qwen2.5 7B long-context variant. For system comparisons, the most informative trio is:
+\begin{enumerate}[leftmargin=1.5em]
+  \item a vanilla Hugging Face Transformers baseline,
+  \item vLLM for PagedAttention-based serving,
+  \item SGLang for structured execution and prefix reuse.
+\end{enumerate}
+This combination is strong because it keeps the model fixed while changing the serving substrate.
+
+\subsection{Experiment family I: retrieval-focused evaluations}
+The first family should cover basic retrieval and its failure patterns:
+\begin{itemize}[leftmargin=1.5em]
+  \item Needle-in-a-Haystack across context lengths such as 4K, 8K, 16K, 32K, 64K, and 128K.
+  \item Needle placement at multiple positions, including beginning, middle, and end.
+  \item RULER retrieval or multi-key retrieval tasks for a harder synthetic setting.
+\end{itemize}
+Expected outcome: basic retrieval remains relatively strong longer than reasoning, but degrades with unfavorable position and increasing length.
+
+\subsection{Experiment family II: reasoning-focused evaluations}
+The second family should explicitly separate retrieval from reasoning:
+\begin{itemize}[leftmargin=1.5em]
+  \item RULER aggregation tasks.
+  \item RULER tracing or variable tracking tasks.
+  \item A small realistic subset such as LongBench QA or selected multi-document QA datasets.
+\end{itemize}
+Expected outcome: performance should degrade earlier and more steeply than on basic retrieval, even when the relevant information is technically present in context.
+
+\subsection{Experiment family III: inference-time extension}
+The third family examines methods that do not require retraining the full backbone:
+\begin{itemize}[leftmargin=1.5em]
+  \item baseline direct inference,
+  \item one positional extension approach, such as a RoPE scaling or interpolation variant,
+  \item one training-free memory or extrapolation method, such as Self-Extend or InfLLM,
+  \item optionally a streaming-oriented method such as StreamingLLM.
+\end{itemize}
+The key dependent variables should include effective context length, decay slope across lengths, and whether gains appear mostly on retrieval or also on reasoning.
+
+\subsection{Experiment family IV: system serving}
+The fourth family focuses on the serving stack itself:
+\begin{itemize}[leftmargin=1.5em]
+  \item time-to-first-token,
+  \item prefill latency,
+  \item decode throughput,
+  \item peak memory,
+  \item batch scalability,
+  \item repeated-prefix speedup when prefix caching is available.
+\end{itemize}
+The experimental comparison should keep model, prompt, and decoding settings fixed while varying only the serving engine. This isolates the systems contribution cleanly.
+
+\subsection{Suggested outputs}
+The report should ultimately present:
+\begin{itemize}[leftmargin=1.5em]
+  \item heatmaps for retrieval accuracy by length and position,
+  \item curves of accuracy versus length for retrieval and reasoning tasks,
+  \item effective context length comparisons across inference-time methods,
+  \item throughput and latency curves for different serving engines,
+  \item a unified analysis table summarizing where each failure mode becomes dominant.
+\end{itemize}
+
+\section{Discussion and Open Challenges}
+
+\subsection{Long context is not one problem}
+The surveyed evidence points strongly toward a decomposition view. Long-context failure is sometimes a retrieval problem, sometimes a reasoning problem, sometimes a systems problem, and often a combination. This is precisely why headline context windows can be misleading.
+
+\subsection{Effective context length matters more than claimed context length}
+RULER's notion of effective context is especially valuable here \citep{hsieh2024ruler}. It offers a more operational measure than marketing-level window sizes and better aligns with downstream utility.
+
+\subsection{Inference-time compute and reasoning are increasingly central}
+Recent evaluations, especially LongBench v2, suggest that the frontier problem is shifting from admitting long context to reasoning deeply over it \citep{bai2025longbenchv2}. This suggests that future progress may depend not only on longer windows or better caches, but also on more adaptive allocation of inference-time computation.
+
+\subsection{Architecture-system co-design remains underexplored}
+Another emerging theme is that model and system design should not be studied in isolation. FlashAttention, PagedAttention, and hybrid architectures all show that the best practical solution is often co-designed across algorithmic and systems layers \citep{dao2022flashattention, kwon2023pagedattention, lieber2024jamba}.
+
+\section{Conclusion}
+This report argued that long-context ability in LLMs cannot be reduced to a single number such as context window size. A more faithful view separates nominal context support, retrieval, reasoning, inference-time extension, and serving efficiency. Under this framework, the literature becomes easier to organize: architectural methods improve asymptotic scalability, extension methods expand usable length without full retraining, retrieval and memory methods reorganize evidence access, and systems work determines whether long-context inference is actually deployable.
+
+For the course project, this decomposition has a practical payoff. It suggests an experimental program that is both ambitious and interpretable: evaluate the same model across retrieval, reasoning, extension, and serving settings, then identify which bottleneck dominates under which conditions. That kind of analysis is more informative than a generic benchmark sweep and better aligned with the current frontier of long-context research.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

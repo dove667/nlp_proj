@@ -34,7 +34,7 @@
 \maketitle
 
 \begin{abstract}
-Long-context ability has become a central theme in modern large language models (LLMs), yet the field still lacks a stable answer to a deceptively simple question: what does it actually mean for a model to \emph{use} long context well? Larger context windows alone are not sufficient. A model may accept 128K or even million-token inputs, while still degrading on retrieval from the middle of a document, on multi-hop aggregation across distant spans, or under realistic serving constraints. This report surveys long-context LLMs through a unified lens that separates five factors: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. We review architectural routes for long-sequence modeling, context extension methods built on top of Transformer backbones, retrieval and memory augmentation, and system techniques such as IO-aware attention and KV-cache management. We further compare the evaluation landscape, from Needle-in-a-Haystack and position-sensitivity tests to RULER, LongBench, $\infty$Bench, BABILong, L-Eval, and LongBench v2. Finally, we formulate a full experimental plan that is explicitly designed to disentangle whether long-context failure is primarily a retrieval problem, a reasoning problem, an inference-time extension problem, or a serving problem. Our main claim is that long-context ability is not a single scalar property but a joint outcome of model design, prompting and retrieval strategy, task structure, and system implementation.
+Long-context ability has become a central theme in modern large language models (LLMs), yet the field still lacks a stable answer to a deceptively simple question: what does it actually mean for a model to \emph{use} long context well? Larger context windows alone are not sufficient. A model may accept 128K or even million-token inputs, while still degrading on retrieval from the middle of a document, on multi-hop aggregation across distant spans, or under realistic serving constraints. This report surveys long-context LLMs through a unified lens that separates five factors: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. We review architectural routes for long-sequence modeling, context extension methods built on top of Transformer backbones, retrieval and memory augmentation, and system techniques such as IO-aware attention and KV-cache management---including token selection and eviction methods such as H$_2$O, SnapKV, and FIER. We further compare the evaluation landscape, from Needle-in-a-Haystack and position-sensitivity tests to RULER, LongBench, $\infty$Bench, BABILong, L-Eval, and LongBench v2. Finally, we formulate a full experimental plan that is explicitly designed to disentangle whether long-context failure is primarily a retrieval problem, a reasoning problem, an inference-time extension problem, or a serving problem. Our main claim is that long-context ability is not a single scalar property but a joint outcome of model design, prompting and retrieval strategy, task type, and system implementation.
 \end{abstract}
 
 \section{Introduction}
@@ -72,7 +72,7 @@ This is the largest length regime at which relevant information can still be fou
 This dimension concerns multi-hop chaining, cross-segment aggregation, comparison, and variable tracking over distant evidence. Recent benchmarks increasingly suggest that this is the hardest long-context sub-problem \citep{hsieh2024ruler, kuratov2024babilong, bai2025longbenchv2}.
 
 \paragraph{Inference-time extension effectiveness.}
-Many practical approaches do not redesign the architecture from scratch, but instead modify positional scaling, chunk the input, manage cache selectively, or introduce memory-like mechanisms at inference time \citep{chen2023pi, peng2023yarn, ding2024longrope, xiao2023streamingllm, jin2024selfextend, xiao2024infllm}. Their value lies in how much effective context they recover per unit implementation complexity.
+Many practical approaches do not redesign the architecture from scratch, but instead modify positional scaling, chunk the input, manage cache selectively, or introduce memory-like mechanisms at inference time \citep{chen2023pi, peng2023yarn, ding2024longrope, xiao2023streamingllm, jin2024selfextend, xiao2024infllm, zhang2023h2o, li2024snapkv, wang2025fier}. Their value lies in how much effective context they recover per unit implementation complexity.
 
 \paragraph{System serving efficiency.}
 In production and in realistic experiments, long context is constrained by prefill time, decode throughput, peak memory, cache reuse, and batching efficiency. System work is therefore not just a deployment detail; it determines what long-context regimes are empirically reachable \citep{dao2022flashattention, dao2023flashattention2, kwon2023pagedattention, zheng2024sglang}.
@@ -148,31 +148,152 @@ which emphasizes that the extended context is mapped back into the positional ra
 
 These methods matter because they are much cheaper than training a new long-context backbone from scratch. However, they mainly answer ``how do we feed longer inputs into the model?'' rather than ``how do we ensure the model reasons well once those inputs are available?'' The distinction is crucial for interpreting benchmark gains.
 
-\subsection{Efficient attention reorganization and memory-based extrapolation}
-StreamingLLM observes that only a few early ``attention sink'' tokens, together with a recent sliding window, can stabilize streaming inference without retraining \citep{xiao2023streamingllm}. If $\mathcal{S}_{\text{sink}}$ denotes the set of sink-token indices and $w$ is the recent window size, the retained memory at time step $t$ can be expressed as
+\subsection{Inference-time long-context adaptation}
+
+\paragraph{Attention-structure reorganization.}
+Self-Extend addresses long-context extrapolation by modifying the attention
+pattern at inference time. Instead of simply increasing the dense attention
+window or discarding distant tokens, it constructs a bi-level attention pattern:
+\emph{neighbor attention} preserves fine-grained local interactions within a
+short range, while \emph{grouped attention} aggregates farther tokens into
+coarser units \citep{jin2024selfextend}. The method therefore tries to preserve
+local fidelity while maintaining coarse long-range connectivity, without
+requiring further long-context pretraining.
+
+\paragraph{KV-cache quantization, eviction, and retrieval.}
+A second line of inference-time methods targets the KV cache budget directly.
+These methods do not primarily ask how to change the model's attention structure,
+but how to make the stored keys and values cheaper, smaller, or more selective
+during generation.
+
+KIVI represents the most direct form of KV-cache compression: it keeps the cache
+structure intact but reduces the precision of stored keys and values
+\citep{liu2024kivi}. Its central observation is that the key and value caches
+have different distributional properties, so they should be quantized
+asymmetrically: keys are quantized per channel, while values are quantized per
+token. This makes KIVI a useful baseline for KV-cache efficiency because it
+compresses the representation of cached information rather than deciding which
+tokens to evict.
+
+StreamingLLM instead reduces the active cache by retaining only a small set of
+early \emph{attention sink} tokens together with a recent sliding window
+\citep{xiao2023streamingllm}. If $\mathcal{S}_{\text{sink}}$ denotes the set of
+sink-token indices and $w$ is the recent window size, the retained memory at
+time step $t$ can be expressed as
 \begin{equation}
 \mathcal{M}_t = \mathcal{S}_{\text{sink}} \cup \{t-w+1,\dots,t\}.
 \end{equation}
-This notation makes the retention policy explicit: the method keeps a small set of globally useful early tokens together with a bounded suffix of recent context. Attention is then computed only over the retained set,
+Attention is then computed only over the retained set,
 \begin{equation}
-\mathrm{Attn}_t=\mathrm{softmax}\!\left(\frac{q_t K_{\mathcal{M}_t}^\top}{\sqrt{d}}\right)V_{\mathcal{M}_t},
+\mathrm{Attn}_t=\mathrm{softmax}\!\left(\frac{q_t K_{\mathcal{M}_t}^\top}{\sqrt{d}}\right)V_{\mathcal{M}_t}.
 \end{equation}
-which makes the memory footprint effectively bounded even as the full sequence continues to grow. This type of method is especially natural for streaming or autoregressive settings in which the sequence keeps expanding but full-history attention is too expensive.
+Compared with KIVI, StreamingLLM changes not the numerical precision of the KV
+cache, but the set of tokens that remain visible to the model.
 
-Self-Extend addresses a somewhat different problem. Instead of simply truncating the accessible context, it constructs a bi-level attention pattern during inference. In the authors' formulation, \emph{neighbor attention} preserves fine-grained local interactions within a short range, while \emph{grouped attention} aggregates information from tokens that are farther away, thereby approximating long-range access without full dense attention over the entire sequence \citep{jin2024selfextend}. The method therefore tries to preserve both local fidelity and coarse long-range connectivity.
+H$_2$O further makes cache retention adaptive. It observes that a small subset
+of tokens, termed \emph{heavy hitters}, accumulate disproportionately large
+attention scores and are repeatedly referenced during decoding
+\citep{zhang2023h2o}. The cache therefore balances heavy-hitter tokens with a
+recent window. The eviction decision can be framed as selecting a subset
+$\mathcal{C}_t \subset \{1,\dots,t\}$ of size $B$ that maximizes accumulated
+attention mass:
+\begin{equation}
+\mathcal{C}_t = \operatorname*{arg\,max}_{|\mathcal{S}|=B} \sum_{i \in \mathcal{S}} \sum_{s \le t} a_{s,i},
+\end{equation}
+where $a_{s,i}$ is the attention score from decoding step $s$ to token $i$.
+This formulation makes the selection criterion explicit: tokens that have been
+consistently attended to are preferred over tokens that were only briefly
+relevant.
 
-InfLLM takes yet another route. Rather than modifying the attention pattern alone, it stores distant context in additional memory units and retrieves token-relevant units during attention computation, effectively turning long-context extrapolation into a memory lookup problem over remote context \citep{xiao2024infllm}. Relative to Self-Extend, the key distinction is that the remote context is not merely reorganized within attention; it is explicitly externalized into a structured memory. These methods are attractive for because they expose distinct long-context trade-offs without requiring frontier-scale pretraining: StreamingLLM bounds active memory, Self-Extend reorganizes attention, and InfLLM changes how distant context is stored and revisited.
+SnapKV shifts the selection decision to the prefill phase rather than performing
+it incrementally during decoding \citep{li2024snapkv}. The key observation is
+that each attention head exhibits a predictable focus pattern: the positions it
+will attend to during generation can be inferred from a short \emph{observation
+window} at the end of the prompt. SnapKV uses this window to score and cluster
+KV positions per head, retaining only high-importance positions before
+generation begins. This front-loaded compression avoids the overhead of
+per-step eviction.
+
+FIER pushes the granularity of selection further \citep{wang2025fier}. Rather
+than operating at the page or chunk level, it selects individual tokens from the
+full cache at each decoding step. To make token-level retrieval efficient, FIER
+uses 1-bit quantized keys as lightweight importance proxies, enabling
+query-relevant token selection without the cost of full-precision key
+comparisons.
+
+Taken together, these methods form a spectrum of KV-cache adaptation strategies.
+KIVI compresses the representation of the cache; StreamingLLM applies a fixed
+sink-plus-window retention rule; H$_2$O performs dynamic heavy-hitter eviction;
+SnapKV front-loads selection into the prefill stage; and FIER performs
+fine-grained query-aware token retrieval. They differ in \emph{what} is reduced
+(precision or token set), \emph{when} selection occurs, and \emph{how}
+importance is estimated.
 
 \subsection{Retrieval as context selection for long-context processing}
-So far, the discussion has focused on methods that enlarge or reorganize the context processed by the model itself. In many realistic long-context problems, however, the main difficulty is not simply that the available input is too long, but that only part of it is relevant at any given step. Under this view, retrieval is a way of constructing a more useful context before the model performs reasoning. In other words, retrieval addresses long-context processing from the perspective of \emph{context selection} rather than raw window expansion.
 
-This perspective is especially important in multi-document QA, enterprise knowledge access, codebase understanding, and long-form scientific synthesis, where reading everything at once may be either too expensive or too distracting. LongBench already showed that retrieval and compression can help weaker long-context models, although they do not fully substitute for intrinsically stronger long-context understanding \citep{bai2024longbench}. More recent work rethinks the granularity and structure of retrieval itself. RAPTOR organizes documents through recursive abstraction for tree-structured retrieval \citep{sarthi2024raptor}. LongRAG argues that stronger readers make much larger retrieval units feasible and sometimes preferable \citep{wang2024longrag}. Anthropic's contextual retrieval further emphasizes that retrieval quality depends on preserving local context around chunks, rather than embedding isolated fragments alone \citep{anthropic2024contextualretrieval}.
+So far, the discussion has focused on inference-time methods that reorganize
+attention or reduce the active KV cache. A complementary view is that
+long-context processing is often less about making every token visible at all
+times, and more about deciding which pieces of context should be surfaced for
+the current computation. Under this view, retrieval is a form of
+\emph{context selection}: it constructs a more useful working context before, or
+during, model reasoning.
 
-The key point for this section is that long-context capability is not always achieved by passing more tokens through the model in a single shot. In many settings, it is achieved by deciding which evidence should be surfaced, in what granularity, and in what organization, before the model reasons over it.
+InfLLM sits at the boundary between KV-cache adaptation and retrieval-based
+long-context processing. It stores distant context into additional memory units
+and retrieves token-relevant units during attention computation
+\citep{xiao2024infllm}. Unlike the eviction methods above, which decide which
+cached keys and values should remain active within the model's standard attention
+mechanism, InfLLM externalizes remote context into a structured memory and
+selectively brings back relevant units when needed. The distinction matters: KV
+eviction methods operate entirely within the attention computation and are
+transparent to the rest of the model, whereas InfLLM introduces an explicit
+external memory that the model queries. This makes InfLLM closer in spirit to
+retrieval-augmented approaches, even though it operates at inference time without
+any offline indexing step.
 
+That boundary---between inference-time memory management and offline retrieval
+augmentation---is worth making explicit. The methods discussed so far (KIVI,
+StreamingLLM, H$_2$O, SnapKV, FIER, InfLLM) all operate at generation time on
+a single input: they decide how to compress, evict, or selectively access the
+KV cache for the current sequence. Retrieval-augmented generation, by contrast,
+typically involves a separate retrieval step that runs before the model sees the
+query, drawing from an indexed corpus that is independent of the current
+generation context. This is a fundamentally different intervention point in the
+long-context pipeline.
+
+This perspective is especially important in multi-document QA, enterprise
+knowledge access, codebase understanding, and long-form scientific synthesis,
+where reading everything at once may be either too expensive or too distracting.
+LongBench already showed that retrieval and compression can help weaker
+long-context models, although they do not fully substitute for intrinsically
+stronger long-context understanding \citep{bai2024longbench}. More recent work
+rethinks the granularity and structure of retrieval itself. RAPTOR organizes
+documents through recursive abstraction for tree-structured retrieval
+\citep{sarthi2024raptor}. LongRAG argues that stronger readers make much larger
+retrieval units feasible and sometimes preferable \citep{wang2024longrag}.
+Anthropic's contextual retrieval further emphasizes that retrieval quality
+depends on preserving local context around chunks, rather than embedding
+isolated fragments alone \citep{anthropic2024contextualretrieval}.
+
+The key point for this section is that long-context capability is not always
+achieved by passing more tokens through the model in a single shot. In many
+settings, it is achieved by deciding which evidence should be surfaced, in what
+granularity, and in what organization, before the model reasons over it.
 \subsection{What these strategies actually change}
-These approaches should not be grouped together merely because they are all cheaper than retraining a new backbone. They intervene at different points in the long-context pipeline. Positional information extension changes \emph{admissible length}. Attention reorganization and memory-based extrapolation change how previously seen context is retained or revisited during inference. Retrieval changes which evidence is surfaced in the first place. In other words, they target different failure modes within long-context ability and should not be evaluated with a single metric.
+The methods surveyed in this section should not be grouped together merely because they are all cheaper than retraining a new backbone. They intervene at different points in the long-context pipeline and address different failure modes.
 
+Positional extension methods (ALiBi, PI, YaRN, LongRoPE) change \emph{admissible length}: they determine how long an input the model can accept without positional out-of-distribution failure, but say nothing about whether the model uses that input well.
+
+Attention-structure reorganization (Self-Extend) changes \emph{how the model attends} to distant tokens during inference, trading off local precision against coarse long-range coverage.
+
+KV-cache adaptation methods (KIVI, StreamingLLM, H$_2$O, SnapKV, FIER) change \emph{what is retained in memory} during generation. They differ in whether they compress representation precision (KIVI), apply a fixed retention rule (StreamingLLM), perform dynamic importance-based eviction (H$_2$O), front-load selection into prefill (SnapKV), or perform fine-grained per-step token retrieval (FIER).
+
+Inference-time memory augmentation (InfLLM) changes \emph{how remote context is stored and accessed}, externalizing it beyond the standard KV cache while remaining tied to the current generation.
+
+Retrieval augmentation (RAPTOR, LongRAG, contextual retrieval) changes \emph{which evidence enters the context at all}, operating on an offline-indexed corpus before generation begins.
+
+Because these strategies target different failure modes, they should not be evaluated with a single metric, and gains on one dimension do not imply gains on others.
 
 \section{Systems for Long-Context LLMs}
 \label{sec:systems}
@@ -280,9 +401,10 @@ The third family examines methods that do not require retraining the full backbo
   \item baseline direct inference,
   \item one positional extension approach, such as a RoPE scaling or interpolation variant,
   \item one training-free memory or extrapolation method, such as Self-Extend or InfLLM,
+  \item one KV cache token selection method, such as SnapKV or FIER,
   \item optionally a streaming-oriented method such as StreamingLLM.
 \end{itemize}
-The key dependent variables should include effective context length, decay slope across lengths, and whether gains appear mostly on retrieval or also on reasoning. For task accuracy itself, the simplest reference metric is
+The key dependent variables should include effective context length, decay slope across lengths, and whether gains appear mostly on retrieval or also on reasoning. KV cache selection methods are particularly informative here because they expose a different trade-off from positional extension: rather than asking ``how far can the model reach?'', they ask ``given a fixed memory budget, which tokens should be kept?'' Comparing SnapKV (prefill-time selection) against FIER (per-step token-level retrieval) can further reveal whether the timing and granularity of selection matter for task accuracy. For task accuracy itself, the simplest reference metric is
 \begin{equation}
 \mathrm{Acc}=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}\{\hat{y}_i=y_i\},
 \end{equation}

@@ -11,8 +11,10 @@ import yaml
 class ModelSpec:
     name: str
     architecture: str
-    backend: str
+    implementation: str
     model_path: str
+    tokenizer_path: str | None = None
+    config_path: str | None = None
 
 
 @dataclass(frozen=True)

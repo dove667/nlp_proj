@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 
 from exp_c.schema import BaseModelSpec, MethodSpec
+from models.factory import build_method as build_source_method
+from models.factory import build_model
+from models.spec import MethodSpec as SourceMethodSpec
+from models.spec import ModelSpec as SourceModelSpec
 
 
 @dataclass(frozen=True)
@@ -17,14 +20,33 @@ class InferenceMethod:
     def __init__(self, base_model: BaseModelSpec, method: MethodSpec) -> None:
         self.base_model = base_model
         self.method = method
+        source_model = build_model(
+            SourceModelSpec(
+                name=base_model.name,
+                architecture=base_model.architecture,
+                implementation=base_model.implementation,
+                model_path=base_model.model_path,
+                tokenizer_path=base_model.tokenizer_path,
+                config_path=base_model.config_path,
+            )
+        )
+        self.impl = build_source_method(
+            source_model,
+            SourceMethodSpec(
+                name=method.name,
+                implementation=method.implementation,
+                config_path=method.config_path,
+                init_kwargs=method.init_kwargs,
+            ),
+        )
 
     def generate(self, prompt: str, *, max_new_tokens: int = 512) -> GenerationResult:
-        start = time.perf_counter()
-        raise NotImplementedError(
-            "Connect this method to baseline / YaRN / Self-Extend / KIVI / SnapKV / FIER / StreamingLLM."
+        output = self.impl.generate(prompt, max_new_tokens=max_new_tokens)
+        return GenerationResult(
+            text=output.text,
+            latency_seconds=float(output.latency_seconds or 0.0),
+            extra=output.extra or {},
         )
-        latency = time.perf_counter() - start
-        return GenerationResult(text="", latency_seconds=latency, extra={})
 
 
 def build_method(base_model: BaseModelSpec, method: MethodSpec) -> InferenceMethod:

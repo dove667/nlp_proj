@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from models.factory import build_model
+from models.spec import ModelSpec
 from exp_d.schema import SystemSpec
 from exp_d.workload import ServingRequest
 
@@ -21,9 +23,48 @@ class ServingClient:
     def __init__(self, spec: SystemSpec, *, method: str) -> None:
         self.spec = spec
         self.method = method
+        self.model = None
+        if spec.backend == "source":
+            if not all([spec.model_path, spec.implementation]):
+                raise ValueError(f"Source backend is missing source fields for {spec.name}.")
+            self.model = build_model(
+                ModelSpec(
+                    name=spec.model_name,
+                    architecture=spec.architecture,
+                    implementation=str(spec.implementation),
+                    model_path=str(spec.model_path),
+                    tokenizer_path=spec.tokenizer_path,
+                    config_path=spec.config_path,
+                )
+            )
 
     def generate_batch(self, requests: list[ServingRequest]) -> list[ServingResponse]:
-        raise NotImplementedError("Connect this to HF / vLLM / SGLang / official model serving.")
+        if self.spec.backend == "source":
+            assert self.model is not None
+            responses = []
+            for request in requests:
+                output = self.model.generate(request.prompt, max_new_tokens=request.output_length)
+                responses.append(
+                    ServingResponse(
+                        request_id=request.request_id,
+                        text=output.text,
+                        input_tokens=int(output.input_tokens or request.context_length),
+                        output_tokens=int(output.output_tokens or request.output_length),
+                        ttft_seconds=float(output.extra.get("ttft_seconds", 0.0))
+                        if output.extra
+                        else 0.0,
+                        total_seconds=float(output.latency_seconds or 0.0),
+                        extra=output.extra or {},
+                    )
+                )
+            return responses
+
+        if self.spec.backend in {"vllm", "sglang"}:
+            raise NotImplementedError(
+                f"Implement {self.spec.backend} HTTP/OpenAI-compatible client for endpoint {self.spec.endpoint}."
+            )
+
+        raise ValueError(f"Unsupported serving backend: {self.spec.backend}")
 
 
 def build_client(spec: SystemSpec, *, method: str) -> ServingClient:

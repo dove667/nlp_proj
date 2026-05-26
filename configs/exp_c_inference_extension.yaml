@@ -4,30 +4,32 @@ output_dir: results/exp_c_inference_extension
 
 base_model:
   name: Llama-3.1-8B-Instruct
-  backend: hf
-  model_path: /path/to/Llama-3.1-8B-Instruct
+  architecture: dense_transformer
+  implementation: llama
+  model_path: /srv/weights/Llama-3.1-8B-Instruct
+  tokenizer_path: /srv/weights/Llama-3.1-8B-Instruct
 
 methods:
   - name: baseline
-    adapter: baseline
+    implementation: baseline
   - name: yarn
-    adapter: yarn
-    config_path: /path/to/yarn/config.yaml
+    implementation: yarn
+    config_path: /srv/configs/yarn.yaml
   - name: self_extend
-    adapter: self_extend
-    config_path: /path/to/self_extend/config.yaml
+    implementation: self_extend
+    config_path: /srv/configs/self_extend.yaml
   - name: kivi
-    adapter: kivi
-    config_path: /path/to/kivi/config.yaml
+    implementation: kivi
+    config_path: /srv/configs/kivi.yaml
   - name: snapkv
-    adapter: snapkv
-    config_path: /path/to/snapkv/config.yaml
+    implementation: snapkv
+    config_path: /srv/configs/snapkv.yaml
   - name: fier
-    adapter: fier
-    config_path: /path/to/fier/config.yaml
+    implementation: fier
+    config_path:
   - name: streaming_llm
-    adapter: streaming_llm
-    config_path: /path/to/streaming_llm/config.yaml
+    implementation: streaming_llm
+    config_path: /srv/configs/streaming_llm.yaml
 
 benchmarks:
   - name: niah

@@ -14,6 +14,9 @@ class SystemSpec:
     architecture: str
     backend: str
     model_path: str | None = None
+    implementation: str | None = None
+    tokenizer_path: str | None = None
+    config_path: str | None = None
     endpoint: str | None = None
 
 

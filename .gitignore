@@ -16,7 +16,7 @@ venv/
 # Data and Models
 data/
 datasets/
-models/
+/models/
 checkpoints/
 results/*
 !results/.gitkeep

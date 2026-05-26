@@ -5,20 +5,24 @@ output_dir: results/exp_a_retrieval
 models:
   - name: Llama-3.1-8B-Instruct
     architecture: dense_transformer
-    backend: hf
-    model_path: /path/to/Llama-3.1-8B-Instruct
+    implementation: llama
+    model_path: /srv/weights/Llama-3.1-8B-Instruct
+    tokenizer_path: /srv/weights/Llama-3.1-8B-Instruct
   - name: Longformer-4096
     architecture: sparse_local_global_attention
-    backend: hf
-    model_path: /path/to/Longformer-4096
+    implementation: longformer
+    model_path: /srv/weights/Longformer-4096
+    tokenizer_path: /srv/weights/Longformer-4096
   - name: Mamba-2-2.7B
     architecture: ssm
-    backend: hf
-    model_path: /path/to/Mamba-2-2.7B
+    implementation: mamba2
+    model_path: /srv/weights/Mamba-2-2.7B
+    tokenizer_path: /srv/weights/Mamba-2-2.7B
   - name: Jamba-9B
     architecture: hybrid
-    backend: hf
-    model_path: /path/to/Jamba-9B
+    implementation: jamba
+    model_path: /srv/weights/Jamba-9B
+    tokenizer_path: /srv/weights/Jamba-9B
 
 benchmarks:
   - name: niah

@@ -10,15 +10,19 @@ import yaml
 @dataclass(frozen=True)
 class BaseModelSpec:
     name: str
-    backend: str
     model_path: str
+    architecture: str
+    implementation: str
+    tokenizer_path: str | None = None
+    config_path: str | None = None
 
 
 @dataclass(frozen=True)
 class MethodSpec:
     name: str
-    adapter: str
+    implementation: str
     config_path: str | None = None
+    init_kwargs: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

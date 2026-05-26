@@ -1,0 +1,36 @@
+experiment: exp_d_serving
+description: Serving-system throughput, latency, and memory under long context.
+output_dir: results/exp_d_serving
+
+systems:
+  - name: llama_hf
+    model_name: Llama-3.1-8B-Instruct
+    architecture: dense_transformer
+    backend: hf
+    model_path: /path/to/Llama-3.1-8B-Instruct
+  - name: llama_vllm
+    model_name: Llama-3.1-8B-Instruct
+    architecture: dense_transformer
+    backend: vllm
+    endpoint: http://localhost:8000
+  - name: llama_sglang
+    model_name: Llama-3.1-8B-Instruct
+    architecture: dense_transformer
+    backend: sglang
+    endpoint: http://localhost:30000
+  - name: mamba2_hf
+    model_name: Mamba-2-2.7B
+    architecture: ssm
+    backend: hf
+    model_path: /path/to/Mamba-2-2.7B
+  - name: jamba_hf
+    model_name: Jamba-9B
+    architecture: hybrid
+    backend: hf
+    model_path: /path/to/Jamba-9B
+
+methods: [baseline, kivi, snapkv, fier, streaming_llm]
+context_lengths: [4096, 16384, 32768, 65536, 131072]
+batch_sizes: [1, 4, 8, 16]
+output_length: 128
+metrics: [ttft, tpot, throughput, peak_gpu_memory]

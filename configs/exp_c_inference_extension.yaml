@@ -1,0 +1,47 @@
+experiment: exp_c_inference_extension
+description: Inference-time long-context extension methods on Llama.
+output_dir: results/exp_c_inference_extension
+
+base_model:
+  name: Llama-3.1-8B-Instruct
+  backend: hf
+  model_path: /path/to/Llama-3.1-8B-Instruct
+
+methods:
+  - name: baseline
+    adapter: baseline
+  - name: yarn
+    adapter: yarn
+    config_path: /path/to/yarn/config.yaml
+  - name: self_extend
+    adapter: self_extend
+    config_path: /path/to/self_extend/config.yaml
+  - name: kivi
+    adapter: kivi
+    config_path: /path/to/kivi/config.yaml
+  - name: snapkv
+    adapter: snapkv
+    config_path: /path/to/snapkv/config.yaml
+  - name: fier
+    adapter: fier
+    config_path: /path/to/fier/config.yaml
+  - name: streaming_llm
+    adapter: streaming_llm
+    config_path: /path/to/streaming_llm/config.yaml
+
+benchmarks:
+  - name: niah
+    data_path: /path/to/prepared/niah
+    tasks: [single_needle]
+  - name: ruler_retrieval
+    data_path: /path/to/prepared/ruler
+    tasks: [single_key, multi_key]
+  - name: ruler_reasoning
+    data_path: /path/to/prepared/ruler
+    tasks: [common_words_aggregation]
+  - name: longbench
+    data_path: /path/to/prepared/longbench
+    tasks: [hotpotqa]
+
+context_lengths: [32768, 65536, 131072]
+metrics: [accuracy, effective_context_length, latency_overhead]

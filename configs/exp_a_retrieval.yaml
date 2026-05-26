@@ -1,0 +1,34 @@
+experiment: exp_a_retrieval
+description: Cross-architecture retrieval baseline with NIAH and RULER retrieval.
+output_dir: results/exp_a_retrieval
+
+models:
+  - name: Llama-3.1-8B-Instruct
+    architecture: dense_transformer
+    backend: hf
+    model_path: /path/to/Llama-3.1-8B-Instruct
+  - name: Longformer-4096
+    architecture: sparse_local_global_attention
+    backend: hf
+    model_path: /path/to/Longformer-4096
+  - name: Mamba-2-2.7B
+    architecture: ssm
+    backend: hf
+    model_path: /path/to/Mamba-2-2.7B
+  - name: Jamba-9B
+    architecture: hybrid
+    backend: hf
+    model_path: /path/to/Jamba-9B
+
+benchmarks:
+  - name: niah
+    data_path: /path/to/prepared/niah
+    tasks: [single_needle]
+  - name: ruler_retrieval
+    data_path: /path/to/prepared/ruler
+    tasks: [single_key, multi_key]
+
+context_lengths: [4096, 8192, 16384, 32768, 65536, 131072]
+needle_positions: [0.05, 0.25, 0.5, 0.75, 0.95]
+metrics: [accuracy, effective_context_length]
+effective_context_threshold: 0.8

@@ -1,0 +1,32 @@
+experiment: exp_b_reasoning
+description: Cross-architecture reasoning and long-document understanding.
+output_dir: results/exp_b_reasoning
+
+models:
+  - name: Llama-3.1-8B-Instruct
+    architecture: dense_transformer
+    backend: hf
+    model_path: /path/to/Llama-3.1-8B-Instruct
+  - name: Longformer-4096
+    architecture: sparse_local_global_attention
+    backend: hf
+    model_path: /path/to/Longformer-4096
+  - name: Mamba-2-2.7B
+    architecture: ssm
+    backend: hf
+    model_path: /path/to/Mamba-2-2.7B
+  - name: Jamba-9B
+    architecture: hybrid
+    backend: hf
+    model_path: /path/to/Jamba-9B
+
+benchmarks:
+  - name: ruler_reasoning
+    data_path: /path/to/prepared/ruler
+    tasks: [variable_tracking, common_words_aggregation, multi_hop_tracing]
+  - name: longbench
+    data_path: /path/to/prepared/longbench
+    tasks: [hotpotqa, qasper, gov_report, repobench_p]
+
+context_lengths: [8192, 32768, 65536, 131072]
+metrics: [accuracy, f1, rouge_l, accuracy_decay_slope]

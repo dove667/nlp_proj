@@ -4,6 +4,15 @@
 
 长上下文能力由四个维度共同决定：名义窗口长度、有效检索长度、长程推理能力、系统效率。四组实验分别拆解这四个维度。
 
+## 数据来源约定
+
+为减少数据准备和评测口径分散，当前实验统一只使用两套 benchmark：
+
+- `RULER`：负责 synthetic retrieval / reasoning 测试
+- `LongBench`：负责更真实的长文档理解、问答、摘要与代码上下文测试
+
+当前版本**不再单独使用 NIAH**。另外，本项目的关注重点是“长输入理解”，因此不专门设计“短输入长生成”实验。
+
 ---
 
 ## Exp A：跨架构 Retrieval 基线
@@ -20,8 +29,7 @@
 | Hybrid | Jamba-9B | Transformer + Mamba 混合 |
 
 **Benchmark**：
-- NIAH（Needle-in-a-Haystack）：单 needle，heatmap（横轴位置，纵轴长度）
-- RULER retrieval 子任务：single-key、multi-key retrieval
+- RULER retrieval 子任务：`single-key`、`multi-key retrieval`
 
 **长度档位**：4K、8K、16K、32K、64K、128K
 
@@ -37,7 +45,7 @@
 
 **Benchmark**：
 - RULER 复杂子任务：variable tracking、common words aggregation、multi-hop tracing
-- LongBench 子集（4–5 个）：
+- LongBench 子集（4 个）：
   - HotpotQA（multi-doc QA，多跳推理）
   - Qasper（单文档学术 QA）
   - GovReport（长文档摘要）
@@ -47,7 +55,7 @@
 
 **指标**：accuracy / F1（任务相关）、accuracy decay slope $\Delta(L_1, L_2)$
 
-**预期发现**：NIAH 接近满分的模型在 RULER aggregation / LongBench multi-hop 上显著掉点，且不同架构的掉点模式不同。
+**预期发现**：在 RULER retrieval 上表现较强的模型，在 RULER aggregation / multi-hop tracing 和 LongBench 多文档理解任务上仍可能显著掉点，且不同架构的掉点模式不同。
 
 ---
 
@@ -69,7 +77,10 @@
 | KV retrieval | FIER | 每步 token 级 KV 检索 |
 | Streaming | StreamingLLM | sink + sliding window |
 
-**Benchmark**：复用 Exp A 的 NIAH + RULER retrieval，以及 Exp B 的 RULER aggregation + LongBench HotpotQA
+**Benchmark**：
+- 复用 Exp A 的 RULER retrieval：`single-key`、`multi-key retrieval`
+- 复用 Exp B 的 RULER reasoning：`common words aggregation`、`multi-hop tracing`
+- 复用 Exp B 的 LongBench 子集：优先 `HotpotQA`，必要时补 `Qasper`
 
 **长度档位**：32K、64K、128K（超出 Llama 原生舒适区的档位）
 
@@ -121,3 +132,10 @@
 | A + B | Llama-3.1-8B-Instruct、Longformer-4096、Mamba-2-2.7B、Jamba-9B |
 | C | Llama-3.1-8B-Instruct × {baseline, YaRN, Self-Extend, SnapKV, FIER, StreamingLLM} |
 | D | Llama × {HF, vLLM, SGLang} × {baseline, KIVI, SnapKV, FIER, StreamingLLM}；Mamba-2、Jamba（HF 原生） |
+
+## 当前范围总结
+
+- 数据来源只保留：`RULER + LongBench`
+- `RULER` 用于 retrieval 和 synthetic reasoning
+- `LongBench` 用于更真实的长输入理解任务
+- 不专门纳入“短输入长生成”任务

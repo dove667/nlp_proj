@@ -1,6 +1,6 @@
 # NLP Course Project
 
-欢迎来到本自然语言处理（NLP）课程项目的代码仓库。本项目包含了相关的文献调研（Surveys）以及实验记录（Experiments）。
+本仓库是南方科技大学 (Sounthern University of Science and Technology) 的自然语言处理 (CS310 Natural Language Processing) 课程项目的代码仓库，项目选题是：What Determines Long-Context Ability in LLMs? A Survey with Experimental Analysis。
 
 ## 目录结构 / Project Structure
 
@@ -17,8 +17,6 @@
 
 ## 环境依赖 / Setup
 
-建议使用 Anaconda 或虚拟环境来管理项目依赖：
-
 ```bash
 conda create -n nlp_env python=3.11
 conda activate nlp_env
@@ -28,13 +26,14 @@ conda activate nlp_env
 
 例如，对于 CUDA 12.1 环境，可以使用：
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install torch --index-url https://download.pytorch.org/whl/cu121
 ```
 
 安装完 PyTorch 后，再安装其余依赖：
 ```bash
 pip install -r requirements.txt
 ```
+注意这里只包含一些基本厂家
 
 ## 运行说明 / Usage
 
@@ -43,14 +42,14 @@ pip install -r requirements.txt
 模型接入统一走 `src/models/`：
 
 - 在配置文件中填写 `implementation`、`model_path`、`tokenizer_path`、`config_path`。
-- `implementation` 目前支持 `llama`、`longformer`、`mamba2`、`jamba`。
-- Llama 已有本地 PyTorch 架构骨架；Longformer / Mamba-2 / Jamba 先保留源码入口和明确 TODO。
+- `implementation` 目前支持 `llama`、`mamba2`、`jamba`。
+- Llama 已有本地 PyTorch 架构骨架； Mamba-2 / Jamba 先保留源码入口和明确 TODO。
 - 不在框架层调用 HuggingFace `AutoModel`。
 
 ### Exp A：跨架构 Retrieval 基线
 
 ```bash
-conda run -n AI python scripts/run_exp_a.py --config configs/exp_a_retrieval.yaml
+python scripts/run_exp_a.py --config configs/exp_a_retrieval.yaml
 ```
 
 需要补齐 `src/exp_a/data_loader.py`，接入服务器上的 NIAH / RULER retrieval 数据。模型通过 `src/models/` 统一接入。
@@ -58,7 +57,7 @@ conda run -n AI python scripts/run_exp_a.py --config configs/exp_a_retrieval.yam
 ### Exp B：跨架构 Reasoning 测试
 
 ```bash
-conda run -n AI python scripts/run_exp_b.py --config configs/exp_b_reasoning.yaml
+python scripts/run_exp_b.py --config configs/exp_b_reasoning.yaml
 ```
 
 需要补齐 `src/exp_b/data_loader.py`，并按数据集格式完善 F1 / ROUGE-L scoring。模型通过 `src/models/` 统一接入。
@@ -66,7 +65,7 @@ conda run -n AI python scripts/run_exp_b.py --config configs/exp_b_reasoning.yam
 ### Exp C：推理时优化方法测试
 
 ```bash
-conda run -n AI python scripts/run_exp_c.py --config configs/exp_c_inference_extension.yaml
+python scripts/run_exp_c.py --config configs/exp_c_inference_extension.yaml
 ```
 
 需要在 `configs/exp_c_inference_extension.yaml` 中填写各方法源码路径。FIER 暂未固定源码仓库，保留 adapter 给服务器侧实现。
@@ -74,7 +73,7 @@ conda run -n AI python scripts/run_exp_c.py --config configs/exp_c_inference_ext
 ### Exp D：系统性能测试
 
 ```bash
-conda run -n AI python scripts/run_exp_d.py --config configs/exp_d_serving.yaml
+python scripts/run_exp_d.py --config configs/exp_d_serving.yaml
 ```
 
 需要在 `src/exp_d/client_adapter.py` 和 `src/exp_d/profiler.py` 中接入 vLLM / SGLang client、GPU 显存采集和更精确的 TTFT / TPOT 记录。源码模型仍走 `src/models/`。

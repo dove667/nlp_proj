@@ -14,7 +14,6 @@ env/
 venv/
 
 # Data and Models
-data/
 datasets/
 /models/
 checkpoints/
@@ -30,3 +29,4 @@ results/*
 Thumbs.db
 
 AGENTS.md
+CLAUDE.md

@@ -24,7 +24,6 @@
 | 架构类型 | 模型 | 代表什么 |
 |---|---|---|
 | Dense Transformer | Llama-3.1-8B-Instruct | 标准全注意力，生态最成熟 |
-| Sparse / local-global attention | Longformer-4096 | 滑动窗口 + global token |
 | SSM / linear recurrent | Mamba-2-2.7B | 无注意力，线性时间 |
 | Hybrid | Jamba-9B | Transformer + Mamba 混合 |
 
@@ -136,6 +135,6 @@
 ## 当前范围总结
 
 - 数据来源只保留：`RULER + LongBench`
-- `RULER` 用于 retrieval 和 synthetic reasoning
+- `RULER` 用于 retrieval 和 synthetic reasoning [https://github.com/NVIDIA/RULER.git](https://github.com/NVIDIA/RULER.git)
 - `LongBench` 用于更真实的长输入理解任务
 - 不专门纳入“短输入长生成”任务

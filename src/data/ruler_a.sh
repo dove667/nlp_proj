@@ -7,8 +7,8 @@ export TRANSFORMERS_OFFLINE=1
 export HF_HUB_OFFLINE=1
 export NLTK_DATA=/data1/zsh/nltk_data
 
-MODEL_NAME=llama31_8b_instruct
-TOKENIZER_PATH=/data1/zsh/models/Llama-3.1-8B-Instruct
+MODEL_NAME=llama31_8b_instruct # 替换成你的模型
+TOKENIZER_PATH=/data1/zsh/models/Llama-3.1-8B-Instruct # 替换成你的模型
 SAVE_ROOT=/data1/zsh/datasets/ruler
 NUM_SAMPLES=500
 TEMPLATE_TYPE=base

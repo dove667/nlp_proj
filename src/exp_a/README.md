@@ -11,5 +11,15 @@
 入口：
 
 ```bash
-conda run -n AI python scripts/run_exp_a.py --config configs/exp_a_retrieval.yaml
+python /data1/zsh/eval_ruler_hf.py \
+--model_path /data1/zsh/models/Llama-3.1-8B-Instruct \
+--data_root /data1/zsh/datasets/ruler \
+--out_root /data1/zsh/results/ruler \
+--lengths 4096 8192 16384 32768 \
+--tasks niah_single_1 niah_multikey_1 \
+--max_new_tokens 128 \
+--dtype bf16 \
+--attn_implementation sdpa \
+--apply_chat_template \
+--resume
 ```

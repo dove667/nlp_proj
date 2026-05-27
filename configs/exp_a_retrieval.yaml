@@ -6,33 +6,25 @@ models:
   - name: Llama-3.1-8B-Instruct
     architecture: dense_transformer
     implementation: llama
-    model_path: /srv/weights/Llama-3.1-8B-Instruct
-    tokenizer_path: /srv/weights/Llama-3.1-8B-Instruct
-  - name: Longformer-4096
-    architecture: sparse_local_global_attention
-    implementation: longformer
-    model_path: /srv/weights/Longformer-4096
-    tokenizer_path: /srv/weights/Longformer-4096
-  - name: Mamba-2-2.7B
+    model_path: 
+    tokenizer_path: 
+  - name: Falcon3-Mamba-7B-Instruct
     architecture: ssm
     implementation: mamba2
-    model_path: /srv/weights/Mamba-2-2.7B
-    tokenizer_path: /srv/weights/Mamba-2-2.7B
-  - name: Jamba-9B
+    model_path: 
+    tokenizer_path: 
+  - name: Zamba2-7B-Instruct-v2
     architecture: hybrid
-    implementation: jamba
-    model_path: /srv/weights/Jamba-9B
-    tokenizer_path: /srv/weights/Jamba-9B
+    implementation: zamba
+    model_path: 
+    tokenizer_path:
 
 benchmarks:
-  - name: niah
-    data_path: /path/to/prepared/niah
-    tasks: [single_needle]
   - name: ruler_retrieval
     data_path: /path/to/prepared/ruler
     tasks: [single_key, multi_key]
 
-context_lengths: [4096, 8192, 16384, 32768, 65536, 131072]
+context_lengths: [4096, 8192, 16384, 32768]
 needle_positions: [0.05, 0.25, 0.5, 0.75, 0.95]
 metrics: [accuracy, effective_context_length]
 effective_context_threshold: 0.8

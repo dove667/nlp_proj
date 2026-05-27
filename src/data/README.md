@@ -48,3 +48,13 @@ export NLTK_DATA=/data1/zsh/nltk_data
 
 示例脚本（Llama-3.1-8B-Instruct）：[ruler_a.sh](ruler_a.sh)。注意脚本要放在 RULER/scripts/data/下面。
 
+示例结果：
+datasets/ruler
+  /llama31_8b_instruct
+    /4096
+      /niah_single_1
+      /niah_multikey_1
+    /8192
+      /niah_single_1
+      /niah_multikey_1
+    ...

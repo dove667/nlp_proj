@@ -1,15 +1,32 @@
 # Exp C: Inference-Time Extension
 
-目标：在 Llama 主模型上比较 baseline、YaRN、Self-Extend、KIVI、SnapKV、FIER、StreamingLLM 等推理时扩窗/优化方法。
+`Exp C` 直接运行 [runner.py](/Users/dove/Desktop/NLP/nlp_proj/src/exp_c/runner.py)。
 
-需要在服务器侧补齐：
+数据：
 
-- `method_adapter.py`：为每种方法包装模型加载、KV cache 策略或推理后端。
-- `data_loader.py`：复用 Exp A/B 的 NIAH、RULER、LongBench 数据。
-- `evaluator.py`：输出 accuracy gain、有效上下文长度变化和 latency overhead。
+- RULER NIAH retrieval
+- RULER reasoning
+- LongBench 子集
 
-入口：
+常用参数：
+
+- `--model_name`
+- `--architecture`
+- `--implementation`
+- `--model_path`
+- `--method_name`
+- `--method_implementation`
+- `--method_config_path`
+- `--output_dir`
+- `--context_lengths`
+- `--ruler_data_root`
+- `--ruler_niah_tasks`
+- `--ruler_reasoning_tasks`
+- `--longbench_data_root`
+- `--longbench_tasks`
+
+查看完整参数：
 
 ```bash
-conda run -n AI python scripts/run_exp_c.py --config configs/exp_c_inference_extension.yaml
+python src/exp_c/runner.py --help
 ```

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from exp_c.schema import BaseModelSpec, MethodSpec
 from models.factory import build_method as build_source_method
 from models.factory import build_model
 from models.spec import MethodSpec as SourceMethodSpec
@@ -14,6 +13,24 @@ class GenerationResult:
     text: str
     latency_seconds: float
     extra: dict
+
+
+@dataclass(frozen=True)
+class BaseModelSpec:
+    name: str
+    model_path: str
+    architecture: str
+    implementation: str
+    tokenizer_path: str | None = None
+    config_path: str | None = None
+
+
+@dataclass(frozen=True)
+class MethodSpec:
+    name: str
+    implementation: str
+    config_path: str | None = None
+    init_kwargs: dict | None = None
 
 
 class InferenceMethod:

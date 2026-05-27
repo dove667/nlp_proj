@@ -11,7 +11,7 @@
 - `RULER`：负责 synthetic retrieval / reasoning 测试
 - `LongBench`：负责更真实的长文档理解、问答、摘要与代码上下文测试
 
-当前版本**不再单独使用 NIAH**。另外，本项目的关注重点是“长输入理解”，因此不专门设计“短输入长生成”实验。
+当前版本**不再单独维护独立 NIAH 数据集**。不过 `Exp A` 仍然会明确做 **NIAH retrieval 任务**，只是这些样本来自 **RULER 目录下的 NIAH 子任务**。另外，本项目的关注重点是“长输入理解”，因此不专门设计“短输入长生成”实验。
 
 ---
 
@@ -28,7 +28,9 @@
 | Hybrid (Mamba + Transformer) | Zyphra/Zamba2-7B-Instruct-v2 | 16K（可扩展） |
 
 **Benchmark**：
-- RULER retrieval 子任务：`single-key`、`multi-key retrieval`
+- 数据来源：`RULER`
+- 当前使用的 RULER NIAH 子任务：`niah_single_1`、`niah_multikey_1`
+- 叙事上仍将该组实验称为 **NIAH retrieval**
 
 **长度档位**：4K、8K、16K、32K（三个模型统一测到 32K，Zamba2 超出官方支持范围的部分正好展示 degradation）
 
@@ -43,7 +45,8 @@
 **模型**：与 Exp A 完全一致（三个模型）
 
 **Benchmark**：
-- RULER 复杂子任务：variable tracking、common words aggregation、multi-hop tracing
+- 数据来源：`RULER + LongBench`
+- RULER reasoning 子任务：variable tracking、common words aggregation、multi-hop tracing
 - LongBench 子集（4 个）：
   - HotpotQA（multi-doc QA，多跳推理）
   - Qasper（单文档学术 QA）
@@ -77,8 +80,8 @@
 | Streaming | StreamingLLM | sink + sliding window |
 
 **Benchmark**：
-- 复用 Exp A 的 RULER retrieval：`single-key`、`multi-key retrieval`
-- 复用 Exp B 的 RULER reasoning：`common words aggregation`、`multi-hop tracing`
+- 复用 Exp A 的 **RULER NIAH retrieval 子任务**：`niah_single_1`、`niah_multikey_1`
+- 复用 Exp B 的 **RULER reasoning 子任务**：`common words aggregation`、`multi-hop tracing`
 - 复用 Exp B 的 LongBench 子集：优先 `HotpotQA`，必要时补 `Qasper`
 
 **长度档位**：32K、64K、128K（超出 Llama 原生舒适区的档位）
@@ -136,5 +139,7 @@
 
 - 数据来源只保留：`RULER + LongBench`
 - `RULER` 用于 retrieval 和 synthetic reasoning [https://github.com/NVIDIA/RULER.git](https://github.com/NVIDIA/RULER.git)
+- `Exp A` 具体使用 RULER 下的 `niah_single_1` / `niah_multikey_1`
+- `Exp B` 具体使用 RULER 的 reasoning 子任务与 LongBench 子集
 - `LongBench` 用于更真实的长输入理解任务
 - 不专门纳入“短输入长生成”任务

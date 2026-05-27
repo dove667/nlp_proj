@@ -1,9 +1,20 @@
 from __future__ import annotations
 
-from exp_b.schema import ModelSpec
+from dataclasses import dataclass
+
 from models.base import GenerationOutput
 from models.factory import build_model as build_source_model
 from models.spec import ModelSpec as SourceModelSpec
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    name: str
+    architecture: str
+    implementation: str
+    model_path: str
+    tokenizer_path: str | None = None
+    config_path: str | None = None
 
 
 class ReasoningModel:

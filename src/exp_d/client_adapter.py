@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from models.factory import build_model
 from models.spec import ModelSpec
-from exp_d.schema import SystemSpec
 from exp_d.workload import ServingRequest
 
 
@@ -17,6 +16,19 @@ class ServingResponse:
     ttft_seconds: float
     total_seconds: float
     extra: dict
+
+
+@dataclass(frozen=True)
+class SystemSpec:
+    name: str
+    model_name: str
+    architecture: str
+    backend: str
+    model_path: str | None = None
+    implementation: str | None = None
+    tokenizer_path: str | None = None
+    config_path: str | None = None
+    endpoint: str | None = None
 
 
 class ServingClient:

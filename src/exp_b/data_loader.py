@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from exp_b.schema import BenchmarkSpec
-
 
 @dataclass(frozen=True)
 class ReasoningCase:
@@ -16,6 +14,13 @@ class ReasoningCase:
     answers: list[str]
     metric: str
     metadata: dict
+
+
+@dataclass(frozen=True)
+class BenchmarkSpec:
+    name: str
+    data_path: str
+    tasks: list[str]
 
 
 class ReasoningDataLoader:

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from models.base import GenerationModel, InferenceMethod
 from models.llama.model import LlamaSourceModel
-from models.longformer.model import LongformerSourceModel
 from models.mamba2.model import Mamba2SourceModel
-from models.jamba.model import JambaSourceModel
+from models.zamba2.model import Zamba2SourceModel
 from models.methods.baseline import BaselineMethod
 from models.methods.fier import FIERMethod
 from models.methods.kivi import KIVIMethod
@@ -18,14 +17,17 @@ from models.spec import MethodSpec, ModelSpec
 def build_model(spec: ModelSpec) -> GenerationModel:
     implementations = {
         "llama": LlamaSourceModel,
-        "longformer": LongformerSourceModel,
         "mamba2": Mamba2SourceModel,
-        "jamba": JambaSourceModel,
+        "zamba2": Zamba2SourceModel,
     }
     try:
         cls = implementations[spec.implementation]
     except KeyError as exc:
-        raise ValueError(f"Unknown model implementation: {spec.implementation}") from exc
+        known = ", ".join(sorted(implementations))
+        raise ValueError(
+            f"Unknown model implementation: {spec.implementation}. "
+            f"Currently available source adapters: {known}."
+        ) from exc
     return cls(spec)
 
 

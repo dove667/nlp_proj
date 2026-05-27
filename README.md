@@ -1,79 +1,66 @@
 # NLP Course Project
 
-本仓库是南方科技大学 (Sounthern University of Science and Technology) 的自然语言处理 (CS310 Natural Language Processing) 课程项目的代码仓库，项目选题是：What Determines Long-Context Ability in LLMs? A Survey with Experimental Analysis。
+本仓库是南方科技大学 NLP 课程项目仓库，主题是：**What Determines Long-Context Ability in LLMs? A Survey with Experimental Analysis**。
 
-## 目录结构 / Project Structure
+## 目录结构
 
-- `docs/survey1.md`, `docs/survey2.md`, `docs/survey3.md`: 课题相关的文献调研记录与阅读笔记。
-- `docs/experiments.md`: 核心实验步骤、参数设计以及实验结果的记录。
-- `configs/`: 实验配置文件。
-- `scripts/`: 可直接运行的实验脚本与绘图脚本。
-- `src/exp_a/`: Exp A，跨架构 retrieval 基线，覆盖 NIAH 和 RULER retrieval。
-- `src/exp_b/`: Exp B，跨架构 reasoning 测试，覆盖 RULER 复杂任务和 LongBench 子集。
-- `src/exp_c/`: Exp C，推理时扩窗/优化方法测试。
-- `src/exp_d/`: Exp D，serving 系统吞吐、延迟和显存测试。
-- `src/models/`: 统一模型与推理方法源码 adapter，不使用 HuggingFace `AutoModel` 作为加载入口。
-- `results/`: 实验输出目录，保存 JSONL、CSV、summary 和图表。
+- `docs/survey1.md`, `docs/survey2.md`, `docs/survey3.md`：文献综述与阅读笔记
+- `docs/experiments.md`：实验主线与口径定义
+- `docs/report_outline.md`：报告提纲
+- `src/exp_a/`：Exp A，RULER NIAH retrieval
+- `src/exp_b/`：Exp B，RULER reasoning + LongBench
+- `src/exp_c/`：Exp C，推理时扩窗 / KV 优化方法
+- `src/exp_d/`：Exp D，serving 性能测试
+- `src/models/`：模型与方法实现
+- `src/data/`：RULER 数据准备说明
+- `results/`：实验输出目录
+- `report/`：LaTeX 报告
 
-## 环境依赖 / Setup
+## 环境依赖
 
-```bash
-conda create -n nlp_env python=3.11
-conda activate nlp_env
-```
-
-由于不同设备的 CUDA 环境不同，本项目的 `requirements.txt` 中未包含 PyTorch。请在安装其他依赖前，先前往 [PyTorch 官网](https://pytorch.org/get-started/locally/) 找到适合你设备的安装命令。
-
-例如，对于 CUDA 12.1 环境，可以使用：
-```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-```
-
-安装完 PyTorch 后，再安装其余依赖：
-```bash
-pip install -r requirements.txt
-```
-注意这里只包含一些基本厂家
-
-## 运行说明 / Usage
-
-当前代码按 `docs/experiments.md` 的四个实验拆成四套框架。默认假设模型权重和数据集已经在服务器上准备好，本仓库提供实验编排、配置、结果格式、实验 adapter 和本地模型源码目录。
-
-模型接入统一走 `src/models/`：
-
-- 在配置文件中填写 `implementation`、`model_path`、`tokenizer_path`、`config_path`。
-- `implementation` 目前支持 `llama`、`mamba2`、`jamba`。
-- Llama 已有本地 PyTorch 架构骨架； Mamba-2 / Jamba 先保留源码入口和明确 TODO。
-- 不在框架层调用 HuggingFace `AutoModel`。
-
-### Exp A：跨架构 Retrieval 基线
+`requirements.txt` 不包含 `torch`。建议先安装与服务器 CUDA 匹配的 PyTorch，再安装其余依赖：
 
 ```bash
-python scripts/run_exp_a.py --config configs/exp_a_retrieval.yaml
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
+python -m pip install -r requirements.txt
 ```
 
-需要补齐 `src/exp_a/data_loader.py`，接入服务器上的 NIAH / RULER retrieval 数据。模型通过 `src/models/` 统一接入。
+## 实验口径
 
-### Exp B：跨架构 Reasoning 测试
+- 数据来源：`RULER + LongBench`
+- `Exp A` 使用 RULER 下的 NIAH 子任务：`niah_single_1`、`niah_multikey_1`
+- `Exp B` 使用 RULER reasoning 子任务和 LongBench 子集
+- `Exp C` 复用 `Exp A / Exp B` 的数据
+- `Exp D` 关注 TTFT、TPOT、throughput、peak GPU memory
+
+模型主线：
+
+- `Meta/Llama-3.1-8B-Instruct`
+- `tiiuae/Falcon3-Mamba-7B-Instruct`
+- `Zyphra/Zamba2-7B-Instruct-v2`
+
+## 运行方式
+
+### Exp A
 
 ```bash
-python scripts/run_exp_b.py --config configs/exp_b_reasoning.yaml
+python src/exp_a/eval_ruler_hf.py --help
 ```
 
-需要补齐 `src/exp_b/data_loader.py`，并按数据集格式完善 F1 / ROUGE-L scoring。模型通过 `src/models/` 统一接入。
-
-### Exp C：推理时优化方法测试
+### Exp B
 
 ```bash
-python scripts/run_exp_c.py --config configs/exp_c_inference_extension.yaml
+python src/exp_b/runner.py --help
 ```
 
-需要在 `configs/exp_c_inference_extension.yaml` 中填写各方法源码路径。FIER 暂未固定源码仓库，保留 adapter 给服务器侧实现。
-
-### Exp D：系统性能测试
+### Exp C
 
 ```bash
-python scripts/run_exp_d.py --config configs/exp_d_serving.yaml
+python src/exp_c/runner.py --help
 ```
 
-需要在 `src/exp_d/client_adapter.py` 和 `src/exp_d/profiler.py` 中接入 vLLM / SGLang client、GPU 显存采集和更精确的 TTFT / TPOT 记录。源码模型仍走 `src/models/`。
+### Exp D
+
+```bash
+python src/exp_d/runner.py --help
+```

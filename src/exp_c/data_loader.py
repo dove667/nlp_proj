@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from exp_c.schema import BenchmarkSpec
-
 
 @dataclass(frozen=True)
 class ExtensionCase:
@@ -18,8 +16,15 @@ class ExtensionCase:
     metadata: dict
 
 
+@dataclass(frozen=True)
+class BenchmarkSpec:
+    name: str
+    data_path: str
+    tasks: list[str]
+
+
 class ExtensionDataLoader:
-    """Server-side adapter reusing prepared NIAH, RULER, and LongBench samples."""
+    """Server-side adapter reusing prepared RULER and LongBench samples."""
 
     def iter_cases(
         self,

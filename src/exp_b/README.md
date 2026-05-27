@@ -1,15 +1,26 @@
 # Exp B: Reasoning
 
-目标：比较 retrieval 能力强的模型，在 RULER 复杂任务和 LongBench 子集上的长程推理表现。
+`Exp B` 直接运行 [runner.py](/Users/dove/Desktop/NLP/nlp_proj/src/exp_b/runner.py)。
 
-需要在服务器侧补齐：
+任务：
 
-- `data_loader.py`：读取 RULER reasoning 和 LongBench 子集。
-- `model_adapter.py`：加载四类架构模型。
-- `evaluator.py`：按任务选择 accuracy / F1 / ROUGE-L，并计算 accuracy decay slope。
+- `RULER` reasoning：`variable_tracking`、`common_words_aggregation`、`multi_hop_tracing`
+- `LongBench` 子集：`hotpotqa`、`qasper`、`gov_report`、`repobench_p`
 
-入口：
+常用参数：
+
+- `--model_name`
+- `--architecture`
+- `--implementation`
+- `--model_path`
+- `--tokenizer_path`
+- `--output_dir`
+- `--context_lengths`
+- `--ruler_data_root` + `--ruler_tasks`
+- `--longbench_data_root` + `--longbench_tasks`
+
+查看完整参数：
 
 ```bash
-conda run -n AI python scripts/run_exp_b.py --config configs/exp_b_reasoning.yaml
+python src/exp_b/runner.py --help
 ```

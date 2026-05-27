@@ -10,7 +10,7 @@ git clone https://github.com/NVIDIA/RULER.git
 
 data/ 中的代码可以合成 RULER 中各种数据。有些数据集的合成需要以来网络数据的爬取，如果服务器没法联网，可以现在本地爬好上传到服务器。
 
-比如我们的实验 A 需要的数据：
+比如我们当前 `Exp A` 需要的数据：
 
 ```bash
 TASKS=(
@@ -18,7 +18,7 @@ TASKS=(
   niah_multikey_1
 )
 ```
-niah_multikey_1 需要先爬取 PaulGrahamEssays.json 数据。
+这里虽然实验口径上把它叫做 **NIAH retrieval**，但数据来源仍然是 **RULER 下的 NIAH 子任务**。`niah_multikey_1` 需要先爬取 PaulGrahamEssays.json 数据。
 
 另外 nltk 的 的 punkt 和 punkt_tab 也需要先下载好上传到服务器，下载代码（以 punkt_tab 为例）：
 

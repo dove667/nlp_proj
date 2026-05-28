@@ -193,6 +193,10 @@ def generate_one(
     if do_sample:
         generation_kwargs["temperature"] = temperature
         generation_kwargs["top_p"] = top_p
+    else:
+        # Override sampling defaults from model.generation_config to avoid noisy warnings
+        generation_kwargs["temperature"] = 1.0
+        generation_kwargs["top_p"] = 1.0
 
     gen_ids = model.generate(**generation_kwargs)
 

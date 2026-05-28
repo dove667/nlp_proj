@@ -25,14 +25,13 @@
 |---|---|---|
 | Dense Transformer | Meta/Llama-3.1-8B-Instruct | 128K（有效约 32K） |
 | SSM / linear recurrent | tiiuae/Falcon3-Mamba-7B-Instruct | 32K |
-| Hybrid (Mamba + Transformer) | Zyphra/Zamba2-7B-Instruct-v2 | 16K（可扩展） |
 
 **Benchmark**：
 - 数据来源：`RULER`
 - 当前使用的 RULER NIAH 子任务：`niah_single_1`、`niah_multikey_1`
 - 叙事上仍将该组实验称为 **NIAH retrieval**
 
-**长度档位**：4K、8K、16K、32K（三个模型统一测到 32K，Zamba2 超出官方支持范围的部分正好展示 degradation）
+**长度档位**：4K、8K、16K、32K（Llama 与 Falcon3-Mamba 统一测到 32K）
 
 **指标**：accuracy、effective context length $L_\text{eff}$（accuracy ≥ 0.8 的最大长度）
 
@@ -42,7 +41,7 @@
 
 **问题**：retrieval 能力强的架构，reasoning 能力是否同样强？
 
-**模型**：与 Exp A 完全一致（三个模型）
+**模型**：与 Exp A 完全一致（两个模型）
 
 **Benchmark**：
 - 数据来源：`RULER + LongBench`
@@ -53,7 +52,7 @@
   - GovReport（长文档摘要）
   - RepoBench-P（代码上下文）
 
-**长度档位**：8K、16K、32K（三个模型统一测到 32K，Zamba2 超出官方支持范围的部分正好展示 degradation）
+**长度档位**：8K、16K、32K（Llama 与 Falcon3-Mamba 统一测到 32K）
 
 **指标**：accuracy / F1（任务相关）、accuracy decay slope $\Delta(L_1, L_2)$
 
@@ -99,13 +98,12 @@
 **模型**：
 - Llama-3.1-8B-Instruct（Dense Transformer，主线）
 - tiiuae/Falcon3-Mamba-7B-Instruct（SSM，无 KV cache，用 HF 原生代码）
-- Zyphra/Zamba2-7B-Instruct-v2（Hybrid，用 HF 原生代码）
 
 **变量矩阵**：
 
 | 维度 | 取值 |
 |---|---|
-| 架构 | Llama（Transformer）/ Falcon3-Mamba（SSM）/ Zamba2（Hybrid） |
+| 架构 | Llama（Transformer）/ Falcon3-Mamba（SSM） |
 | Serving backend（仅 Llama） | HuggingFace Transformers / vLLM / SGLang |
 | 推理优化方法（仅 Llama） | baseline / KIVI / SnapKV / FIER / StreamingLLM |
 | Context length | 4K、8K、16K、32K |
@@ -119,7 +117,7 @@
 - Peak GPU memory
 
 **核心图**：
-1. TTFT vs. context length（Llama 不同 backend + Falcon3-Mamba + Zamba2 并列）
+1. TTFT vs. context length（Llama 不同 backend + Falcon3-Mamba 并列）
 2. Peak memory vs. context length（同上，最能体现 SSM 无 KV cache 增长的优势）
 3. Throughput vs. batch size（Llama 不同 backend）
 4. Peak memory vs. context length（Llama × 不同推理优化方法）
@@ -131,9 +129,9 @@
 
 | 实验 | 模型 / 方法 |
 |---|---|
-| A + B | Llama-3.1-8B-Instruct、tiiuae/Falcon3-Mamba-7B-Instruct、Zyphra/Zamba2-7B-Instruct-v2 |
+| A + B | Llama-3.1-8B-Instruct、tiiuae/Falcon3-Mamba-7B-Instruct |
 | C | Llama-3.1-8B-Instruct × {baseline, YaRN, Self-Extend, KIVI, SnapKV, FIER, StreamingLLM} |
-| D | Llama × {HF, vLLM, SGLang} × {baseline, KIVI, SnapKV, FIER, StreamingLLM}；Falcon3-Mamba、Zamba2（HF 原生） |
+| D | Llama × {HF, vLLM, SGLang} × {baseline, KIVI, SnapKV, FIER, StreamingLLM}；Falcon3-Mamba（HF 原生） |
 
 ## 当前范围总结
 
@@ -143,3 +141,4 @@
 - `Exp B` 具体使用 RULER 的 reasoning 子任务与 LongBench 子集
 - `LongBench` 用于更真实的长输入理解任务
 - 不专门纳入“短输入长生成”任务
+- 当前正式实验只保留两类经典路线：Transformer（Llama）与 SSM（Falcon3-Mamba）；`Zamba2` 不再纳入评测矩阵

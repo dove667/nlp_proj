@@ -108,7 +108,6 @@ PY
 
 - `Meta/Llama-3.1-8B-Instruct`
 - `tiiuae/Falcon3-Mamba-7B-Instruct`
-- `Zyphra/Zamba2-7B-Instruct-v2`
 
 ## 运行方式
 

@@ -17,7 +17,7 @@ venv/
 datasets/
 /models/
 checkpoints/
-results/*
+*.jsonl
 !results/.gitkeep
 *.pt
 *.pth

@@ -1,0 +1,7 @@
+length,task,score,num_examples,correct,null_predictions,avg_input_tokens,avg_generated_tokens,total_generation_seconds,data_file,pred_file
+4096,niah_single_1,100.0,500,500,0,3947.886,30.696,1312.598688364029,/data1/zsh/datasets/ruler/niah/Falcon3-Mamba-7B-Instruct/4096/niah_single_1/test.jsonl,results/exp_a/mamba/4096/niah_single_1.pred.jsonl
+4096,niah_multikey_1,43.6,500,218,0,3638.572,102.434,3731.704087972641,/data1/zsh/datasets/ruler/niah/Falcon3-Mamba-7B-Instruct/4096/niah_multikey_1/test.jsonl,results/exp_a/mamba/4096/niah_multikey_1.pred.jsonl
+8192,niah_single_1,100.0,500,500,0,8046.648,32.044,1656.8721714019775,/data1/zsh/datasets/ruler/niah/Falcon3-Mamba-7B-Instruct/8192/niah_single_1/test.jsonl,results/exp_a/mamba/8192/niah_single_1.pred.jsonl
+8192,niah_multikey_1,28.4,500,142,0,7957.342,80.318,3314.310408115387,/data1/zsh/datasets/ruler/niah/Falcon3-Mamba-7B-Instruct/8192/niah_multikey_1/test.jsonl,results/exp_a/mamba/8192/niah_multikey_1.pred.jsonl
+16384,niah_single_1,100.0,500,500,0,16141.076,35.11,2363.008034467697,/data1/zsh/datasets/ruler/niah/Falcon3-Mamba-7B-Instruct/16384/niah_single_1/test.jsonl,results/exp_a/mamba/16384/niah_single_1.pred.jsonl
+16384,niah_multikey_1,21.4,500,107,0,16076.038,90.764,4285.373137712479,/data1/zsh/datasets/ruler/niah/Falcon3-Mamba-7B-Instruct/16384/niah_multikey_1/test.jsonl,results/exp_a/mamba/16384/niah_multikey_1.pred.jsonl

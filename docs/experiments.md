@@ -31,7 +31,7 @@
 - 当前使用的 RULER NIAH 子任务：`niah_single_1`、`niah_multikey_1`
 - 叙事上仍将该组实验称为 **NIAH retrieval**
 
-**长度档位**：4K、8K、16K、32K（Llama 与 Falcon3-Mamba 统一测到 32K）
+**长度档位**：4K、8K、16K、32K（Llama 测到 32K；Falcon3-Mamba 在当前环境下稳定测到 16K）
 
 **指标**：accuracy、effective context length $L_\text{eff}$（accuracy ≥ 0.8 的最大长度）
 
@@ -45,14 +45,14 @@
 
 **Benchmark**：
 - 数据来源：`RULER + LongBench`
-- RULER reasoning 子任务：variable tracking、common words aggregation、multi-hop tracing
+- RULER reasoning 子任务：variable tracking (vt)、common words extraction (cwe)、frequent words extraction (fwe)
 - LongBench 子集（4 个）：
   - HotpotQA（multi-doc QA，多跳推理）
   - Qasper（单文档学术 QA）
   - GovReport（长文档摘要）
   - RepoBench-P（代码上下文）
 
-**长度档位**：8K、16K、32K（Llama 与 Falcon3-Mamba 统一测到 32K）
+**长度档位**：8K、16K、32K（Llama 测到 32K；Falcon3-Mamba 在当前环境下稳定测到 16K，因此若纳入 Exp B，需要单独标注长度上限差异）
 
 **指标**：accuracy / F1（任务相关）、accuracy decay slope $\Delta(L_1, L_2)$
 
@@ -142,3 +142,4 @@
 - `LongBench` 用于更真实的长输入理解任务
 - 不专门纳入“短输入长生成”任务
 - 当前正式实验只保留两类经典路线：Transformer（Llama）与 SSM（Falcon3-Mamba）；`Zamba2` 不再纳入评测矩阵
+- `Falcon3-Mamba-7B-Instruct` 在 `Chen` 上的 32K 配置不纳入正式结果：单卡 OOM，多卡 `device_map=auto` 在 Mamba CUDA kernel 路径上存在稳定性问题

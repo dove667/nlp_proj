@@ -7,15 +7,20 @@ export TRANSFORMERS_OFFLINE=1
 export HF_HUB_OFFLINE=1
 export NLTK_DATA=/data1/zsh/nltk_data
 
-MODEL_NAME=Llama-3.1-8B-Instruct
-TOKENIZER_PATH=/data1/zsh/models/Llama-3.1-8B-Instruct
-SAVE_ROOT=/data1/zsh/datasets/ruler/niah
+MODEL_NAME=Falcon3-Mamba-7B-Instruct
+TOKENIZER_PATH=/data1/zsh/models/Falcon3-Mamba-7B-Instruct
+SAVE_ROOT=/data1/zsh/datasets/ruler/reasoning
 NUM_SAMPLES=500
 TEMPLATE_TYPE=base
 
+# RULER reasoning / aggregation subtasks
+# vt  = variable tracking / multi-hop tracing
+# cwe = common words extraction / aggregation
+# fwe = frequent words extraction / aggregation
 TASKS=(
-  niah_single_1
-  niah_multikey_1
+  vt
+  cwe
+  fwe
 )
 
 LENGTHS=(
@@ -30,7 +35,7 @@ for max_len in "${LENGTHS[@]}"; do
     save_dir="${SAVE_ROOT}/${MODEL_NAME}/${max_len}"
 
     echo "============================================================"
-    echo "Generating RULER retrieval dataset"
+    echo "Generating RULER reasoning/aggregation dataset"
     echo "model=${MODEL_NAME}"
     echo "task=${task}"
     echo "max_seq_length=${max_len}"

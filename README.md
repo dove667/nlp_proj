@@ -53,8 +53,9 @@ CUDA_HOME=/usr/local/cuda MAX_JOBS=8 uv sync --extra mamba-kernels
 - `causal-conv1d` 已放进可选 extra。
 - `mamba-ssm` 暂时没有放进基础依赖里，因为它和当前 `torch/triton` 组合仍需要单独验证。
 - 对于 `Falcon3-Mamba-7B-Instruct`，常见稳定配置是单卡、`bf16/fp16`、不要使用 `device_map="auto"`。
+- 在当前服务器（24GB RTX 4090）上，`Falcon3-Mamba-7B-Instruct` 的 `RULER NIAH` 实验稳定测到 16K；32K 单卡会 OOM，而多卡 `device_map=auto` 在 Mamba CUDA kernel 路径上存在稳定性问题，因此正式结果不包含 Mamba 32K。
 
-当前在 `Chen` 上已经验证通过的 Mamba kernel 组合是：
+当前在上已经验证通过的 Mamba kernel 组合是：
 
 - `torch==2.5.1+cu121`
 - `causal-conv1d==1.6.2.post1`
@@ -65,7 +66,7 @@ CUDA_HOME=/usr/local/cuda MAX_JOBS=8 uv sync --extra mamba-kernels
 推荐流程：
 
 1. 在本地下载与服务器环境匹配的 wheel。
-2. 上传到 `Chen`，例如放到仓库根目录。
+2. 上传到到服务器，例如放到仓库根目录。
 3. 在目标环境中执行本地 wheel 安装。
 
 示例命令：

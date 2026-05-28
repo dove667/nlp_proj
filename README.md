@@ -18,11 +18,82 @@
 
 ## 环境依赖
 
-`requirements.txt` 不包含 `torch`。建议先安装与服务器 CUDA 匹配的 PyTorch，再安装其余依赖：
+当前在 `Chen` 上验证通过的实验环境是：
+
+- Python `3.11`
+- PyTorch `2.5.1+cu121`
+- Transformers `4.49.0`
+- Accelerate `1.13.0`
+- Triton `3.1.0`
+
+仓库现在提供了一个基于 `uv` 的 [`pyproject.toml`](pyproject.toml)。推荐工作流如下：
 
 ```bash
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
-python -m pip install -r requirements.txt
+cd /data1/zsh/nlp_proj
+micromamba create -n nlp_proj python=3.11 -y
+micromamba run -n nlp_proj uv sync
+```
+
+如果只想在现有环境里补齐依赖，也可以：
+
+```bash
+cd /data1/zsh/nlp_proj
+micromamba run -n nlp_proj uv sync
+```
+
+说明：
+
+- `torch` / `torchvision` / `torchaudio` 已固定到 `cu121` 源，避免解析时误切到不兼容的 CUDA 版本。
+- 后续以 `pyproject.toml` 为主，不再依赖旧的环境清单。
+- `Falcon3-Mamba-7B-Instruct` 在 `transformers` 中可以直接推理，不强依赖 `mamba-ssm`。
+
+如果要做 Mamba kernel / efficiency 相关实验，可以额外安装可选依赖：
+
+```bash
+cd /data1/zsh/nlp_proj
+CUDA_HOME=/usr/local/cuda MAX_JOBS=8 micromamba run -n nlp_proj uv sync --extra mamba-kernels
+```
+
+注意：
+
+- `causal-conv1d` 已放进可选 extra。
+- `mamba-ssm` 暂时没有放进基础依赖里，因为它和当前 `torch/triton` 组合仍需要单独验证。
+- 对于 `Falcon3-Mamba-7B-Instruct`，常见稳定配置是单卡、`bf16/fp16`、不要使用 `device_map="auto"`。
+
+当前在 `Chen` 上已经验证通过的 Mamba kernel 组合是：
+
+- `torch==2.5.1+cu121`
+- `causal-conv1d==1.6.2.post1`
+- `mamba-ssm==2.2.4+cu12torch2.5cxx11abifalse`
+
+对于 `mamba-ssm`，更推荐使用“本地下载 wheel，再上传到服务器安装”的方式，尤其是在服务器网络不稳定、GitHub 下载慢、或者 wheel 体积较大时。当前可用 wheel 约 `300MB`，直接在服务器端拉取通常更慢。
+
+推荐流程：
+
+1. 在本地下载与服务器环境匹配的 wheel。
+2. 上传到 `Chen`，例如放到仓库根目录。
+3. 在目标环境中执行本地 wheel 安装。
+
+示例命令：
+
+```bash
+cd /data1/zsh/nlp_proj
+micromamba run -n nlp_proj uv pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+```
+
+安装后可用下面的命令验证：
+
+```bash
+micromamba run -n nlp_proj python - <<'PY'
+import torch
+print("torch =", torch.__version__, "cuda =", torch.version.cuda)
+
+import causal_conv1d
+print("causal_conv1d ok")
+
+import mamba_ssm
+print("mamba_ssm ok")
+PY
 ```
 
 ## 实验口径
@@ -44,7 +115,8 @@ python -m pip install -r requirements.txt
 ### Exp A
 
 ```bash
-python src/exp_a/eval_ruler_hf.py --help
+python src/exp_a/gen_pred_ruler.py --help
+python src/exp_a/analyze_ruler_predictions.py --help
 ```
 
 ### Exp B

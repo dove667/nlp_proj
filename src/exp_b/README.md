@@ -1,6 +1,6 @@
 # Exp B: Reasoning
 
-`Exp B` 直接运行 [runner.py](/Users/dove/Desktop/NLP/nlp_proj/src/exp_b/runner.py)。
+`Exp B` 直接运行 [runner.py](runner.py)。
 
 任务：
 

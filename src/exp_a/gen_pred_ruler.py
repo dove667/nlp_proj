@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import csv
 import json
 import os
 import re
@@ -32,30 +31,6 @@ def append_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def write_summary_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    fieldnames = [
-        "length",
-        "task",
-        "score",
-        "num_examples",
-        "correct",
-        "null_predictions",
-        "avg_input_tokens",
-        "avg_generated_tokens",
-        "total_generation_seconds",
-        "data_file",
-        "pred_file",
-    ]
-
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: row.get(k) for k in fieldnames})
-
-
 def normalize_text(s: str) -> str:
     s = str(s).lower()
     s = re.sub(r"[\x00-\x1f]", " ", s)
@@ -64,20 +39,12 @@ def normalize_text(s: str) -> str:
 
 
 def answer_in_prediction(answer: str, pred: str) -> bool:
-    """
-    RULER NIAH retrieval scoring.
-
-    对 niah_single_1 / niah_multikey_1：
-    outputs 通常是 magic numbers。
-    这里判断 expected answer 是否出现在模型输出中。
-    """
     answer_norm = normalize_text(answer)
     pred_norm = normalize_text(pred)
 
     if not answer_norm:
         return False
 
-    # 数字答案避免 "12" 误匹配 "3124"
     if re.fullmatch(r"[0-9,\s.\-]+", answer_norm):
         pattern = r"(?<!\d)" + re.escape(answer_norm) + r"(?!\d)"
         return re.search(pattern, pred_norm) is not None
@@ -109,18 +76,17 @@ def get_outputs(example: Dict[str, Any]) -> List[str]:
     return [str(outputs)]
 
 
-def load_existing_predictions(pred_path: Path) -> Dict[Any, Dict[str, Any]]:
-    if not pred_path.exists():
-        return {}
+def make_sample_id(example: Dict[str, Any], row_idx: int) -> str:
+    sample_id = example.get("sample_id")
+    if sample_id is None:
+        sample_id = row_idx
+    return str(sample_id)
 
-    existing: Dict[Any, Dict[str, Any]] = {}
-    with pred_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            existing[row.get("index")] = row
-    return existing
+
+def load_existing_predictions(pred_path: Path) -> List[Dict[str, Any]]:
+    if not pred_path.exists():
+        return []
+    return read_jsonl(pred_path)
 
 
 def get_dtype(dtype_name: str):
@@ -133,6 +99,22 @@ def get_dtype(dtype_name: str):
     if dtype_name == "fp32":
         return torch.float32
     raise ValueError(f"Unsupported dtype: {dtype_name}")
+
+
+def resolve_input_device(model, fallback: str = "cuda:0") -> torch.device:
+    hf_device_map = getattr(model, "hf_device_map", None)
+    if hf_device_map:
+        for device in hf_device_map.values():
+            if device in ("cpu", "disk"):
+                continue
+            if isinstance(device, int):
+                return torch.device(f"cuda:{device}")
+            return torch.device(str(device))
+
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return torch.device(fallback)
 
 
 def render_prompt(
@@ -173,6 +155,7 @@ def generate_one(
     top_p: float,
     apply_chat_template: bool,
     system_prompt: Optional[str],
+    model_input_device: torch.device,
 ) -> Tuple[str, int, int, float]:
     t0 = time.time()
 
@@ -189,10 +172,10 @@ def generate_one(
         add_special_tokens=False,
     )
 
-    input_ids = inputs["input_ids"].to(model.device)
+    input_ids = inputs["input_ids"].to(model_input_device)
     attention_mask = inputs.get("attention_mask", None)
     if attention_mask is not None:
-        attention_mask = attention_mask.to(model.device)
+        attention_mask = attention_mask.to(model_input_device)
 
     input_len = int(input_ids.shape[-1])
     do_sample = temperature > 0.0
@@ -220,7 +203,7 @@ def generate_one(
     return pred, input_len, int(new_ids.shape[-1]), elapsed
 
 
-def evaluate_file(
+def generate_predictions_for_file(
     model,
     tokenizer,
     data_file: Path,
@@ -232,6 +215,7 @@ def evaluate_file(
     system_prompt: Optional[str],
     limit: int,
     resume: bool,
+    model_input_device: torch.device,
 ) -> Dict[str, Any]:
     rows = read_jsonl(data_file)
     if limit > 0:
@@ -240,32 +224,38 @@ def evaluate_file(
     if pred_file.exists() and not resume:
         pred_file.unlink()
 
-    existing = load_existing_predictions(pred_file) if resume else {}
+    existing_rows = load_existing_predictions(pred_file) if resume else []
 
-    num_total = 0
-    num_correct = 0
-    num_null = 0
+    if existing_rows:
+        if any("sample_id" not in row for row in existing_rows):
+            raise ValueError(
+                f"Existing prediction file is from the old buggy resume format: {pred_file}. "
+                "Delete it and rerun without --resume once, or regenerate predictions with the new script."
+            )
+        if len(existing_rows) > len(rows):
+            raise ValueError(
+                f"Prediction file has more rows than dataset: {pred_file} "
+                f"({len(existing_rows)} > {len(rows)})."
+            )
 
+    reused_count = 0
     generated_count = 0
-    total_input_tokens = 0
-    total_new_tokens = 0
-    total_seconds = 0.0
 
-    for ex in tqdm(rows, desc=f"{data_file.parent.name}/{data_file.name}"):
-        idx = ex.get("index")
+    for row_idx, ex in enumerate(tqdm(rows, desc=f"{data_file.parent.name}/{data_file.name}")):
+        sample_id = make_sample_id(ex, row_idx)
         outputs = get_outputs(ex)
 
-        if idx in existing:
-            pred = str(existing[idx].get("pred", ""))
-            correct, _ = score_example(pred, outputs)
-
-            num_total += 1
-            num_correct += int(correct)
-            num_null += int(len(pred.strip()) == 0)
+        if row_idx < len(existing_rows):
+            existing = existing_rows[row_idx]
+            if str(existing.get("sample_id")) != sample_id:
+                raise ValueError(
+                    f"Resume mismatch at row {row_idx} for {pred_file}: "
+                    f"existing sample_id={existing.get('sample_id')} current sample_id={sample_id}"
+                )
+            reused_count += 1
             continue
 
         raw_prompt = ex["input"]
-
         pred, input_tokens, new_tokens, elapsed = generate_one(
             model=model,
             tokenizer=tokenizer,
@@ -275,11 +265,13 @@ def evaluate_file(
             top_p=top_p,
             apply_chat_template=apply_chat_template,
             system_prompt=system_prompt,
+            model_input_device=model_input_device,
         )
 
         correct, missing = score_example(pred, outputs)
 
         out = dict(ex)
+        out["sample_id"] = sample_id
         out["pred"] = pred
         out["correct"] = bool(correct)
         out["missing_outputs"] = missing
@@ -288,34 +280,20 @@ def evaluate_file(
         out["generation_seconds"] = elapsed
 
         append_jsonl(pred_file, [out])
-
-        num_total += 1
-        num_correct += int(correct)
-        num_null += int(len(pred.strip()) == 0)
-
         generated_count += 1
-        total_input_tokens += input_tokens
-        total_new_tokens += new_tokens
-        total_seconds += elapsed
-
-    score = 100.0 * num_correct / max(num_total, 1)
 
     return {
         "data_file": str(data_file),
         "pred_file": str(pred_file),
-        "num_examples": num_total,
-        "correct": num_correct,
-        "score": score,
-        "null_predictions": num_null,
-        "avg_input_tokens": total_input_tokens / max(generated_count, 1),
-        "avg_generated_tokens": total_new_tokens / max(generated_count, 1),
-        "total_generation_seconds": total_seconds,
+        "num_examples": len(rows),
+        "reused_predictions": reused_count,
+        "new_predictions": generated_count,
     }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Offline HF Transformers evaluation for RULER NIAH retrieval tasks."
+        description="Offline HF Transformers prediction generation for RULER NIAH retrieval tasks."
     )
 
     parser.add_argument("--model_path", required=True)
@@ -362,7 +340,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device_map",
         default="auto",
-        help='Usually "auto" or a CUDA device map.',
+        help='Use "auto" for sharded loading, or "none" to disable device_map and place the whole model on --model_device.',
+    )
+
+    parser.add_argument(
+        "--model_device",
+        default="cuda:0",
+        help='Used when --device_map none. Example: "cuda:0" or "cpu".',
     )
 
     parser.add_argument(
@@ -375,13 +359,13 @@ def parse_args() -> argparse.Namespace:
         "--limit",
         type=int,
         default=0,
-        help="Debug only: evaluate first N examples per file.",
+        help="Debug only: generate for the first N examples per file.",
     )
 
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Resume from existing prediction jsonl files.",
+        help="Resume from an existing prediction jsonl file written by this script version.",
     )
 
     return parser.parse_args()
@@ -398,6 +382,7 @@ def main() -> None:
         args.model_path,
         trust_remote_code=True,
         local_files_only=True,
+        clean_up_tokenization_spaces=False,
     )
 
     if tokenizer.pad_token_id is None:
@@ -405,10 +390,12 @@ def main() -> None:
 
     model_kwargs = {
         "torch_dtype": get_dtype(args.dtype),
-        "device_map": args.device_map,
         "trust_remote_code": True,
         "local_files_only": True,
     }
+
+    if args.device_map.lower() != "none":
+        model_kwargs["device_map"] = args.device_map
 
     if args.attn_implementation is not None:
         model_kwargs["attn_implementation"] = args.attn_implementation
@@ -418,13 +405,17 @@ def main() -> None:
         args.model_path,
         **model_kwargs,
     )
+
+    if args.device_map.lower() == "none":
+        model = model.to(args.model_device)
+
     model.eval()
+    model_input_device = resolve_input_device(model, fallback=args.model_device)
+    print(f"Model input device: {model_input_device}")
 
     data_root = Path(args.data_root)
     out_root = Path(args.out_root)
     out_root.mkdir(parents=True, exist_ok=True)
-
-    summaries: List[Dict[str, Any]] = []
 
     for length in args.lengths:
         for task in args.tasks:
@@ -444,7 +435,7 @@ def main() -> None:
             print(f"apply_chat_template: {args.apply_chat_template}")
             print("=" * 80)
 
-            result = evaluate_file(
+            result = generate_predictions_for_file(
                 model=model,
                 tokenizer=tokenizer,
                 data_file=data_file,
@@ -456,23 +447,18 @@ def main() -> None:
                 system_prompt=args.system_prompt,
                 limit=args.limit,
                 resume=args.resume,
+                model_input_device=model_input_device,
             )
-
-            result["length"] = length
-            result["task"] = task
-            summaries.append(result)
 
             print(
-                f"[RESULT] length={length} task={task} "
-                f"score={result['score']:.2f} "
-                f"correct={result['correct']}/{result['num_examples']}"
+                f"[DONE] length={length} task={task} "
+                f"num_examples={result['num_examples']} "
+                f"reused={result['reused_predictions']} "
+                f"generated={result['new_predictions']}"
             )
 
-    summary_path = out_root / "summary.csv"
-    write_summary_csv(summary_path, summaries)
-
     print("=" * 80)
-    print(f"Saved summary to: {summary_path}")
+    print(f"Prediction generation finished under: {out_root}")
     print("=" * 80)
 
 

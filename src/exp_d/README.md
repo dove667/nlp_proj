@@ -1,6 +1,6 @@
 # Exp D: Serving System
 
-`Exp D` 直接运行 [runner.py](/Users/dove/Desktop/NLP/nlp_proj/src/exp_d/runner.py)。
+`Exp D` 直接运行 [runner.py](runner.py)。
 
 常用参数：
 

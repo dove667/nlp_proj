@@ -6,9 +6,9 @@
 git clone https://github.com/NVIDIA/RULER.git
 ```
 
-忽略仓库中的 docker/，只关注 scripts/，下面有三个目录：data（合成数据），eval，pred。
+忽略仓库中的 `docker/`，只关注 `scripts/`，下面有三个目录：`data`（合成数据）、`eval`、`pred`。
 
-data/ 中的代码可以合成 RULER 中各种数据。有些数据集的合成需要以来网络数据的爬取，如果服务器没法联网，可以现在本地爬好上传到服务器。
+`data/` 中的代码可以合成 RULER 中各种数据。有些数据集的合成需要依赖网络数据抓取，如果服务器没法联网，可以先在本地下载好再上传到服务器。
 
 比如我们当前 `Exp A` 需要的数据：
 
@@ -18,9 +18,10 @@ TASKS=(
   niah_multikey_1
 )
 ```
-这里虽然实验口径上把它叫做 **NIAH retrieval**，但数据来源仍然是 **RULER 下的 NIAH 子任务**。`niah_multikey_1` 需要先爬取 PaulGrahamEssays.json 数据。
 
-另外 nltk 的 的 punkt 和 punkt_tab 也需要先下载好上传到服务器，下载代码（以 punkt_tab 为例）：
+这里虽然实验口径上把它叫做 **NIAH retrieval**，但数据来源仍然是 **RULER 下的 NIAH 子任务**。`niah_multikey_1` 需要先准备 `PaulGrahamEssays.json`。
+
+另外 `nltk` 的 `punkt` 和 `punkt_tab` 也需要先下载好上传到服务器，下载代码（以 `punkt_tab` 为例）：
 
 ```bash
 curl -L -o punkt_tab.zip https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/tokenizers/punkt_tab.zip
@@ -29,11 +30,11 @@ unzip -q punkt_tab.zip
 
 放在服务器上：
 
-```bash
-/nltk_data
-    /tokenizers
-        /punkt_tab
-        /punkt
+```text
+/data1/zsh/nltk_data/
+  tokenizers/
+    punkt/
+    punkt_tab/
 ```
 
 在服务器上设置环境变量：
@@ -42,19 +43,27 @@ unzip -q punkt_tab.zip
 export NLTK_DATA=/data1/zsh/nltk_data
 ```
 
-另外，目标模型的 tokenizer 也要准备好。
+另外，目标模型的 tokenizer 也要提前准备好。
 
-都上传好后就可以开始合成实验 A 需要的数据。
+建议直接在项目环境中运行数据合成脚本：
 
-示例脚本（Llama-3.1-8B-Instruct）：[ruler_a.sh](ruler_a.sh)。注意脚本要放在 RULER/scripts/data/下面。
+```bash
+cd /data1/zsh/nlp_proj
+micromamba run -n nlp_proj uv sync
+```
 
-示例结果：
-datasets/ruler
-  /llama31_8b_instruct
-    /4096
-      /niah_single_1
-      /niah_multikey_1
-    /8192
-      /niah_single_1
-      /niah_multikey_1
+都准备好后就可以开始合成 `Exp A` 需要的数据。Llama 示例脚本见 [ruler_a.sh](ruler_a.sh)。注意脚本要放在 `RULER/scripts/data/` 下面执行。
+
+示例结果目录：
+
+```text
+/data1/zsh/datasets/ruler/
+  Llama31_8B_Instruct/
+    4096/
+      niah_single_1/
+      niah_multikey_1/
+    8192/
+      niah_single_1/
+      niah_multikey_1/
     ...
+```

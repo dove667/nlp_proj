@@ -23,8 +23,6 @@ LENGTHS=(
   8192
   16384
   32768
-  65536
-  131072
 )
 
 for max_len in "${LENGTHS[@]}"; do

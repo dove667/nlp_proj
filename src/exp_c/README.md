@@ -1,6 +1,6 @@
 # Exp C: Inference-Time Extension
 
-`Exp C` 直接运行 [runner.py](/Users/dove/Desktop/NLP/nlp_proj/src/exp_c/runner.py)。
+`Exp C` 直接运行 [runner.py](runner.py)。
 
 数据：
 

@@ -8,6 +8,7 @@
 \usepackage{microtype}
 \usepackage{amsmath, amssymb}
 \usepackage{booktabs}
+\usepackage{graphicx}
 \usepackage{array}
 \usepackage{longtable}
 \usepackage{multirow}
@@ -34,7 +35,7 @@
 \maketitle
 
 \begin{abstract}
-Long-context ability has become a central theme in modern large language models (LLMs), yet the field still lacks a stable answer to a deceptively simple question: what does it actually mean for a model to \emph{use} long context well? Larger context windows alone are not sufficient. A model may accept 128K or even million-token inputs, while still degrading on retrieval from the middle of a document, on multi-hop aggregation across distant spans, or under realistic serving constraints. This report surveys long-context LLMs through a unified lens that separates five factors: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. We review architectural routes for long-sequence modeling, context extension methods built on top of Transformer backbones, retrieval and memory augmentation, and system techniques such as IO-aware attention and KV-cache management---including token selection and eviction methods such as H$_2$O, SnapKV, and FIER. We further compare the evaluation landscape, from Needle-in-a-Haystack and position-sensitivity tests to RULER, LongBench, $\infty$Bench, BABILong, L-Eval, and LongBench v2. Finally, we formulate a full experimental plan that is explicitly designed to disentangle whether long-context failure is primarily a retrieval problem, a reasoning problem, an inference-time extension problem, or a serving problem. Our main claim is that long-context ability is not a single scalar property but a joint outcome of model design, prompting and retrieval strategy, task type, and system implementation.
+Long-context ability has become a central theme in modern large language models (LLMs), yet the field still lacks a stable answer to a deceptively simple question: what does it actually mean for a model to \emph{use} long context well? Larger context windows alone are not sufficient. A model may accept 128K or even million-token inputs, while still degrading on retrieval from the middle of a document, on multi-hop aggregation across distant spans, or under realistic serving constraints. This report surveys long-context LLMs through a unified lens that separates five factors: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. We review architectural routes for long-sequence modeling, context extension methods built on top of Transformer backbones, retrieval and memory augmentation, and system techniques such as IO-aware attention and KV-cache management---including token selection and eviction methods such as H$_2$O, SnapKV, and FIER. We further compare the evaluation landscape, from Needle-in-a-Haystack and position-sensitivity tests to RULER, LongBench, $\infty$Bench, BABILong, L-Eval, and LongBench v2. On the empirical side, we already complete a first cross-architecture retrieval study on RULER NIAH tasks using Llama 3.1 8B Instruct and Falcon3-Mamba 7B Instruct, and use its findings to refine the remaining experiment roadmap. The first result is already informative: long-context failure does not emerge as a single smooth curve, but as a task-dependent breakdown in key-value binding, position robustness, and system feasibility. Our main claim is therefore that long-context ability is not a single scalar property but a joint outcome of model design, prompting and retrieval strategy, task type, and system implementation.
 \end{abstract}
 
 \section{Introduction}
@@ -51,7 +52,7 @@ This report is organized around a single question: \emph{what determines long-co
   \item \textbf{System serving efficiency}: whether the model can be run with acceptable latency, memory, and throughput.
 \end{enumerate}
 
-The rest of the report follows this analytical lens. Section~\ref{sec:framework} formalizes the framework. Sections~\ref{sec:modeling}--\ref{sec:systems} survey modeling, extension, retrieval, and systems techniques. Section~\ref{sec:evaluation} reviews benchmarks and what they actually measure. Section~\ref{sec:experiments} proposes a comprehensive experimental design for the course project. We conclude with a discussion of open challenges and a synthesis of current evidence.
+The rest of the report follows this analytical lens. Section~\ref{sec:framework} formalizes the framework. Sections~\ref{sec:modeling}--\ref{sec:systems} survey modeling, extension, retrieval, and systems techniques. Section~\ref{sec:evaluation} reviews benchmarks and what they actually measure. Section~\ref{sec:experiments} reports the first completed experiment family and explains how it reshapes the remaining empirical roadmap. We conclude with a discussion of open challenges and a synthesis of current evidence.
 
 \section{Problem Formulation and Analytical Framework}
 \label{sec:framework}
@@ -353,88 +354,73 @@ where $\tau$ is a task-dependent target threshold such as $0.8$. This definition
 \end{equation}
 This second quantity is useful because two models may have similar accuracy at one length while differing substantially in how rapidly they deteriorate as the context grows.
 
-\section{Experimental Analysis Plan}
+\section{Experimental Analysis}
 \label{sec:experiments}
 
-\subsection{Goal of the experimental section}
-The experimental section of the course project should not aim to produce another generic leaderboard. Its purpose is to answer a sharper question: \emph{when long-context performance fails, which factor fails first?} To make that question operational, we propose a complete experiment matrix that disentangles retrieval, reasoning, inference-time extension, and system serving.
+\subsection{A first completed experiment: retrieval under controlled interference}
+Our first completed experiment targets the retrieval dimension of long-context ability. The goal is not to build another broad leaderboard, but to ask a narrower diagnostic question: does degradation first appear on simple single-target lookup, or only when retrieval also requires precise key-value binding under interference?
 
-\subsection{Research questions}
-We recommend structuring the experiments around the following research questions:
-\begin{description}
-  \item[RQ1] Does long-context degradation appear first as retrieval failure or as reasoning failure?
-  \item[RQ2] How much can inference-time extension improve effective context length without retraining the base model?
-  \item[RQ3] Do different benchmarks agree on what it means for a model to be good at long context?
-  \item[RQ4] Under realistic serving setups, do latency, memory, and throughput become the dominant bottlenecks before benchmark accuracy does?
-\end{description}
+We compare two representative architectures, Llama-3.1-8B-Instruct and Falcon3-Mamba-7B-Instruct, on two RULER NIAH subtasks. The first, \texttt{niah\_single\_1}, embeds one target key-value pair in highly repetitive noise text. The second, \texttt{niah\_multikey\_1}, embeds four key-value pairs in natural essay text and asks for the value associated with one queried key. This makes the second task substantially harder: it is still retrieval, but now retrieval must compete with distractor keys, distractor numbers, and realistic textual interference.
 
-\subsection{Recommended model and system choices}
-A practical primary model is a 7B--8B instruction-tuned checkpoint with an established ecosystem, such as Llama 3.1 8B Instruct or a Qwen2.5 7B long-context variant. For system comparisons, the most informative trio is:
-\begin{enumerate}[leftmargin=1.5em]
-  \item a vanilla Hugging Face Transformers baseline,
-  \item vLLM for PagedAttention-based serving,
-  \item SGLang for structured execution and prefix reuse.
-\end{enumerate}
-This combination is strong because it keeps the model fixed while changing the serving substrate.
+For Llama, we evaluate 4K, 8K, 16K, and 32K contexts. For Falcon3-Mamba, stable runs are available at 4K, 8K, and 16K. We do not report a formal 32K Mamba result: in the current 24GB RTX 4090 experimental environment, 32K single-GPU inference runs out of memory, while multi-GPU \texttt{device\_map=auto} is unstable on the Mamba CUDA-kernel path.
 
-\subsection{Experiment family I: retrieval-focused evaluations}
-The first family should cover basic retrieval and its failure patterns:
-\begin{itemize}[leftmargin=1.5em]
-  \item Needle-in-a-Haystack across context lengths such as 4K, 8K, 16K, 32K, 64K, and 128K.
-  \item Needle placement at multiple positions, including beginning, middle, and end.
-  \item RULER retrieval or multi-key retrieval tasks for a harder synthetic setting.
-\end{itemize}
-Expected outcome: basic retrieval remains relatively strong longer than reasoning, but degrades with unfavorable position and increasing length.
+Table~\ref{tab:expa-main} summarizes the main result.
 
-\subsection{Experiment family II: reasoning-focused evaluations}
-The second family should explicitly separate retrieval from reasoning:
-\begin{itemize}[leftmargin=1.5em]
-  \item RULER aggregation tasks.
-  \item RULER tracing or variable tracking tasks.
-  \item A small realistic subset such as LongBench QA or selected multi-document QA datasets.
-\end{itemize}
-Expected outcome: performance should degrade earlier and more steeply than on basic retrieval, even when the relevant information is technically present in context.
+\begin{table}[h]
+\centering
+\caption{Exp A accuracy (\%) on RULER NIAH retrieval tasks. A dash indicates that the configuration is excluded from formal reporting because it is not stable in the current environment.}
+\label{tab:expa-main}
+\begin{tabular}{lcccc}
+\toprule
+Model / Task & 4K & 8K & 16K & 32K \\
+\midrule
+Llama single-key & 99.8 & 100.0 & 100.0 & 100.0 \\
+Llama multi-key & 100.0 & 99.8 & 100.0 & 99.4 \\
+Falcon3-Mamba single-key & 100.0 & 100.0 & 100.0 & -- \\
+Falcon3-Mamba multi-key & 43.6 & 28.4 & 21.4 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Experiment family III: inference-time extension}
-The third family examines methods that do not require retraining the full backbone:
-\begin{itemize}[leftmargin=1.5em]
-  \item baseline direct inference,
-  \item one positional extension approach, such as a RoPE scaling or interpolation variant,
-  \item one training-free memory or extrapolation method, such as Self-Extend or InfLLM,
-  \item one KV cache token selection method, such as SnapKV or FIER,
-  \item optionally a streaming-oriented method such as StreamingLLM.
-\end{itemize}
-The key dependent variables should include effective context length, decay slope across lengths, and whether gains appear mostly on retrieval or also on reasoning. KV cache selection methods are particularly informative here because they expose a different trade-off from positional extension: rather than asking ``how far can the model reach?'', they ask ``given a fixed memory budget, which tokens should be kept?'' Comparing SnapKV (prefill-time selection) against FIER (per-step token-level retrieval) can further reveal whether the timing and granularity of selection matter for task accuracy. For task accuracy itself, the simplest reference metric is
-\begin{equation}
-\mathrm{Acc}=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}\{\hat{y}_i=y_i\},
-\end{equation}
-which is appropriate when the answer space is discrete or when exact match is the desired success criterion. In long-context settings, task-specific alternatives such as normalized match or substring match are often also needed, especially when answers are free-form but semantically simple.
+The contrast is sharp. Llama remains essentially saturated on both tasks across all tested lengths. Falcon3-Mamba, however, is perfect on the single-key task while collapsing on the multi-key task. This shows that ``retrieval'' is not a single homogeneous capability. A model may preserve one salient target through a long prompt, yet still fail when it must bind the correct key to the correct value among several candidates.
 
-\subsection{Experiment family IV: system serving}
-The fourth family focuses on the serving stack itself:
-\begin{itemize}[leftmargin=1.5em]
-  \item time-to-first-token,
-  \item prefill latency,
-  \item decode throughput,
-  \item peak memory,
-  \item batch scalability,
-  \item repeated-prefix speedup when prefix caching is available.
-\end{itemize}
-The experimental comparison should keep model, prompt, and decoding settings fixed while varying only the serving engine. This isolates the systems contribution cleanly.
+Position-sensitive analysis makes the difference clearer. Figure~\ref{fig:expa-pos} shows that Llama remains nearly flat across position buckets, whereas Falcon3-Mamba exhibits a strong recency bias on \texttt{niah\_multikey\_1}. At 16K, the early and middle buckets are close to zero, and accuracy recovers only near the end of the sequence. This is more informative than a generic length effect: the model is not merely getting worse with longer inputs, but becoming increasingly dependent on recent evidence.
 
-\subsection{Suggested outputs}
-The report should ultimately present:
-\begin{itemize}[leftmargin=1.5em]
-  \item heatmaps for retrieval accuracy by length and position,
-  \item curves of accuracy versus length for retrieval and reasoning tasks,
-  \item effective context length comparisons across inference-time methods,
-  \item throughput and latency curves for different serving engines,
-  \item a unified analysis table summarizing where each failure mode becomes dominant.
-\end{itemize}
+A second observation is that Falcon3-Mamba is also much slower on the multi-key task. The reason is mostly decoding rather than prefill. On \texttt{niah\_single\_1}, the model usually emits a short answer. On \texttt{niah\_multikey\_1}, failed cases often contain long explanatory generations with an incorrect number, which substantially increases output length and wall-clock time.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.78\textwidth]{../results/exp_a/llama31/position_sensitivity_llama31_heatmap.png}\\[0.8em]
+\includegraphics[width=0.78\textwidth]{../results/exp_a/mamba/position_sensitivity_mamba_heatmap.png}
+\caption{Position-sensitive accuracy heatmaps for Exp A. Top: Llama-3.1-8B-Instruct remains near-saturated across lengths and positions. Bottom: Falcon3-Mamba-7B-Instruct is stable on single-key retrieval but shows severe position sensitivity on multi-key retrieval, especially at longer lengths.}
+\label{fig:expa-pos}
+\end{figure}
+
+The qualitative error pattern is also consistent: in failed multi-key cases, Falcon3-Mamba often outputs \emph{a} plausible number, but not the \emph{correct} number. In other words, the failure is less about total loss of the prompt and more about unstable key-value binding under interference. This aligns with a broader claim in the literature that state-space and recurrent-style models can be efficient on long sequences, yet remain weaker than attention-based models on exact content addressing and interference-heavy in-context association.
+
+\subsection{Implications for the rest of the project}
+Exp A already changes how the rest of the empirical study should be framed. First, it confirms that benchmark choice matters: if we had evaluated only the single-key setting, we would have concluded that Falcon3-Mamba is essentially perfect on long-context retrieval. Adding the multi-key task reverses that picture. Second, it suggests that the next empirical priority should be to separate retrieval failure from reasoning failure more explicitly. This motivates Exp B: harder RULER reasoning tasks and a small realistic LongBench subset. Third, the failed 32K Mamba run shows that systems feasibility is not an afterthought; it directly shapes what counts as usable long context in practice. This motivates keeping the serving and efficiency dimension in the final paper rather than relegating it to implementation notes.
+
+The current evidence is still narrow: only the retrieval baseline is complete, the model set is small, and Llama is nearly saturated on the present tasks. Even so, Exp A already supports the central thesis of the report: long-context ability is not a single scalar property, but a joint outcome of architecture, task difficulty, interference structure, and hardware-constrained implementation.
 
 \section{Discussion and Open Challenges}
 
+The survey and the first completed experiment point in the same direction: long-context ability should not be treated as a single number. Even within retrieval, the gap between \texttt{niah\_single\_1} and \texttt{niah\_multikey\_1} is large enough to reverse the qualitative picture for Falcon3-Mamba. This implies that many public discussions around ``supports 32K'' or ``works on long context'' remain underspecified unless they also state what kind of retrieval or reasoning is being tested.
+
+A second challenge is that architecture, benchmark, and systems constraints interact in ways that make simple conclusions dangerous. State-space and recurrent models may offer genuine advantages in memory growth and long-sequence efficiency, yet those gains do not automatically translate into strong key-value binding or multi-evidence reasoning. Conversely, Transformers may remain stronger on difficult retrieval and reasoning tasks while becoming bottlenecked by KV-cache cost and prefill latency. The more realistic conclusion is therefore comparative rather than absolute: different architectures fail differently, and these failure modes only become visible when the benchmark suite spans multiple dimensions.
+
+A third challenge is methodological. The current project already encountered a case where nominal model capability and stable experimental capability diverged: Falcon3-Mamba at 32K on the available 24GB 4090 hardware. This experience reinforces a broader point from the systems literature: serving feasibility is not an afterthought. It directly constrains what counts as usable long context for most research groups and practitioners.
+
+The remaining open problem is therefore not simply ``how do we make windows even larger?'' but rather ``how do we preserve exact retrieval, robust reasoning, and acceptable efficiency simultaneously?'' Hybrid architectures, stronger inference-time cache selection, retrieval-aware memory systems, and more realistic evaluation protocols are all plausible parts of the answer, but none currently resolves the trade-off on its own.
+
 \section{Conclusion}
+
+This report surveyed the long-context literature through five dimensions: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. The literature review suggests that no single technical route---larger windows, linear-time architectures, cache compression, or retrieval augmentation---fully determines long-context ability on its own. Instead, useful long-context behavior emerges from the interaction between architecture, task, inference strategy, and systems realization.
+
+The first completed experiment in this project already supports that claim. On RULER NIAH retrieval, Llama-3.1-8B-Instruct remains nearly saturated across all tested lengths and both retrieval subtasks. Falcon3-Mamba-7B-Instruct, by contrast, is perfect on the simple single-key task but degrades sharply on the more interference-heavy multi-key task, with strong recency bias and unstable key-value binding. This split shows that even ``retrieval'' must be decomposed more carefully: success on a weak single-target task does not imply robust long-context retrieval in a harder setting.
+
+The practical lesson is equally important. For Falcon3-Mamba, 32K evaluation is not stably reachable on the current 24GB 4090 setup, which means systems feasibility already shapes the empirical meaning of long-context support. This reinforces the central thesis of the report: long-context ability is not just a property of the model card, but a joint property of benchmark design, model architecture, inference strategy, and hardware-constrained implementation. The remaining experiments in this project---reasoning, inference-time extension, and serving efficiency---are therefore best understood not as independent add-ons, but as the next steps required to complete this multi-dimensional picture.
+
 
 
 \bibliographystyle{plainnat}

@@ -1,10 +1,11 @@
+# Editor / IDE
 .vscode/
 
-# Byte-compiled / optimized / DLL files
+# Python bytecode
 __pycache__/
 *.py[cod]
 
-# Jupyter Notebook
+# Notebooks
 .ipynb_checkpoints
 
 # Environments
@@ -13,22 +14,38 @@ __pycache__/
 env/
 venv/
 
-# Data and Models
+# Data / model artifacts
 datasets/
 /models/
 checkpoints/
 *.jsonl
-!results/.gitkeep
 *.pt
 *.pth
 *.h5
 *.safetensors
+!results/.gitkeep
 
-# OS generated files
+# LaTeX build artifacts
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.fdb_latexmk
+report/*.fls
+report/*.log
+report/*.out
+report/*.pdfsync
+report/*.synctex.gz
+report/*.toc
+report/*.lof
+report/*.lot
+
+# OS-generated files
 .DS_Store
 Thumbs.db
 
+# Local agent / notes
 AGENTS.md
 CLAUDE.md
 
+# Local wheel files
 mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl

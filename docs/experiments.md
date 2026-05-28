@@ -142,4 +142,4 @@
 - `LongBench` 用于更真实的长输入理解任务
 - 不专门纳入“短输入长生成”任务
 - 当前正式实验只保留两类经典路线：Transformer（Llama）与 SSM（Falcon3-Mamba）；`Zamba2` 不再纳入评测矩阵
-- `Falcon3-Mamba-7B-Instruct` 在 `Chen` 上的 32K 配置不纳入正式结果：单卡 OOM，多卡 `device_map=auto` 在 Mamba CUDA kernel 路径上存在稳定性问题
+- `Falcon3-Mamba-7B-Instruct` 的 32K 配置不纳入正式结果：在当前 24GB RTX 4090 实验环境中，单卡 OOM，多卡 `device_map=auto` 在 Mamba CUDA kernel 路径上存在稳定性问题

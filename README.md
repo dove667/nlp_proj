@@ -5,7 +5,7 @@
 ## 目录结构
 
 - `docs/survey1.md`, `docs/survey2.md`, `docs/survey3.md`：文献综述与阅读笔记
-- `docs/experiments.md`：实验主线与口径定义
+- `docs/experiments.md`：实验主线
 - `docs/report_outline.md`：报告提纲
 - `src/exp_a/`：Exp A，RULER NIAH retrieval
 - `src/exp_b/`：Exp B，RULER reasoning + LongBench
@@ -18,7 +18,7 @@
 
 ## 环境依赖
 
-当前在 `Chen` 上验证通过的实验环境是：
+当前在服务器上验证通过的实验环境是：
 
 - Python `3.11`
 - PyTorch `2.5.1+cu121`
@@ -30,28 +30,22 @@
 
 ```bash
 cd /data1/zsh/nlp_proj
-micromamba create -n nlp_proj python=3.11 -y
-micromamba run -n nlp_proj uv sync
-```
-
-如果只想在现有环境里补齐依赖，也可以：
-
-```bash
-cd /data1/zsh/nlp_proj
-micromamba run -n nlp_proj uv sync
+conda create -n nlp_proj python=3.11 -y
+conda activate nlp_proj
+pip install uv
+uv sync
 ```
 
 说明：
 
 - `torch` / `torchvision` / `torchaudio` 已固定到 `cu121` 源，避免解析时误切到不兼容的 CUDA 版本。
-- 后续以 `pyproject.toml` 为主，不再依赖旧的环境清单。
 - `Falcon3-Mamba-7B-Instruct` 在 `transformers` 中可以直接推理，不强依赖 `mamba-ssm`。
 
 如果要做 Mamba kernel / efficiency 相关实验，可以额外安装可选依赖：
 
 ```bash
 cd /data1/zsh/nlp_proj
-CUDA_HOME=/usr/local/cuda MAX_JOBS=8 micromamba run -n nlp_proj uv sync --extra mamba-kernels
+CUDA_HOME=/usr/local/cuda MAX_JOBS=8 uv sync --extra mamba-kernels
 ```
 
 注意：
@@ -78,13 +72,13 @@ CUDA_HOME=/usr/local/cuda MAX_JOBS=8 micromamba run -n nlp_proj uv sync --extra 
 
 ```bash
 cd /data1/zsh/nlp_proj
-micromamba run -n nlp_proj uv pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+uv pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 ```
 
 安装后可用下面的命令验证：
 
 ```bash
-micromamba run -n nlp_proj python - <<'PY'
+python - <<'PY'
 import torch
 print("torch =", torch.__version__, "cuda =", torch.version.cuda)
 
@@ -96,7 +90,7 @@ print("mamba_ssm ok")
 PY
 ```
 
-## 实验口径
+## 实验
 
 - 数据来源：`RULER + LongBench`
 - `Exp A` 使用 RULER 下的 NIAH 子任务：`niah_single_1`、`niah_multikey_1`
@@ -109,29 +103,4 @@ PY
 - `Meta/Llama-3.1-8B-Instruct`
 - `tiiuae/Falcon3-Mamba-7B-Instruct`
 
-## 运行方式
-
-### Exp A
-
-```bash
-python src/exp_a/gen_pred_ruler.py --help
-python src/exp_a/analyze_ruler_predictions.py --help
-```
-
-### Exp B
-
-```bash
-python src/exp_b/runner.py --help
-```
-
-### Exp C
-
-```bash
-python src/exp_c/runner.py --help
-```
-
-### Exp D
-
-```bash
-python src/exp_d/runner.py --help
-```
+详见 [实验设计文档](docs/experiments.md)。

@@ -55,17 +55,6 @@ CUDA_VISIBLE_DEVICES=1 python src/exp_a/gen_pred_ruler.py \
   --model_device cuda:0 \
   --apply_chat_template \
   --resume
-
-python src/exp_a/gen_pred_ruler.py \
-  --model_path /data1/zsh/models/Zamba2-7B-Instruct-v2 \
-  --data_root /data1/zsh/datasets/ruler/Zamba2-7B-Instruct-v2 \
-  --out_root /data1/zsh/nlp_proj/results/exp_a/zamba \
-  --lengths 4096 8192 16384 32768 \
-  --tasks niah_single_1 niah_multikey_1 \
-  --max_new_tokens 128 \
-  --dtype bf16 \
-  --apply_chat_template \
-  --resume
 ```
 
 说明：

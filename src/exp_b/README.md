@@ -25,7 +25,7 @@
 - `--longbench_data_root`：LongBench 数据目录
 - `--longbench_lengths`：LongBench 目标上下文长度列表
 - `--longbench_tasks`：LongBench 任务列表
-- `--max_new_tokens`
+- `--max_new_tokens`：全局覆盖；设为 `0` 时按任务默认值（RULER reasoning 与 LongBench 都采用项目内任务级推荐值）
 - `--dtype`
 - `--device_map`
 - `--model_device`：当 `--device_map none` 时生效
@@ -44,22 +44,22 @@ CUDA_VISIBLE_DEVICES=0,1 python src/exp_b/gen_pred_benchmarks.py \
   --longbench_data_root /data1/zsh/datasets/LongBench \
   --longbench_lengths 8192 16384 32768 \
   --longbench_tasks hotpotqa qasper gov_report repobench-p \
-  --max_new_tokens 128 \
+  --max_new_tokens 0 \
   --dtype bf16 \
   --attn_implementation sdpa \
   --apply_chat_template \
   --resume
 
-CUDA_VISIBLE_DEVICES=1 python src/exp_b/gen_pred_benchmarks.py \
+CUDA_VISIBLE_DEVICES=2 python src/exp_b/gen_pred_benchmarks.py \
   --model_path /data1/zsh/models/Falcon3-Mamba-7B-Instruct \
   --out_root /data1/zsh/nlp_proj/results/exp_b/mamba \
   --ruler_data_root /data1/zsh/datasets/ruler/reasoning/Falcon3-Mamba-7B-Instruct \
-  --ruler_lengths 4096 8192 16384 32768 \
+  --ruler_lengths 4096 8192 16384 \
   --ruler_tasks vt cwe fwe \
   --longbench_data_root /data1/zsh/datasets/LongBench \
-  --longbench_lengths 8192 16384 32768 \
+  --longbench_lengths 8192 16384 \
   --longbench_tasks hotpotqa qasper gov_report repobench-p \
-  --max_new_tokens 128 \
+  --max_new_tokens 0 \
   --dtype bf16 \
   --device_map none \
   --model_device cuda:0 \
@@ -72,6 +72,9 @@ CUDA_VISIBLE_DEVICES=1 python src/exp_b/gen_pred_benchmarks.py \
 - `Llama` 可以优先尝试 `--device_map auto`
 - `Falcon3-Mamba-7B-Instruct` 建议优先使用 `--device_map none --model_device cuda:0`
 - LongBench 在这里按目标长度做 token-budget 截断，默认保留上下文前后两端
+- RULER reasoning 当前采用项目内任务级推荐值：`vt=64`、`cwe=120`、`fwe=50`；其中 `vt` 额外使用 answer-only prompt，把输出收紧为变量名列表，以避免模型先解释再作答；如果显式传入 `--max_new_tokens > 0`，则会统一覆盖这些默认值
+- 这个设置本质上是在开放式 CoT 与结构化输出之间做推理策略权衡：自由生成链式解释有时可能帮助模型显式展开推理，但也会显著拉长 decode，并把最终答案推迟到更靠后的 token 位置。对 `vt` 而言，本项目优先选择更短、更稳定、可评测的答案式输出，而不是保留不受约束的长解释
+- LongBench 当前采用项目内任务级推荐值：`hotpotqa=32`、`qasper=64`、`gov_report=256`、`repobench-p=128`；这些值不是官方统一标准，而是按任务输出形态给出的更稳妥推理预算
 
 ## Step 2: 分析预测结果
 

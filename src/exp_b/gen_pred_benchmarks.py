@@ -16,6 +16,19 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 LONG_RULER_TASKS = ["vt", "cwe", "fwe"]
 LONGBENCH_TASKS = ["hotpotqa", "qasper", "gov_report", "repobench-p"]
 
+RULER_REASONING_TASK_MAX_NEW_TOKENS = {
+    "vt": 64,
+    "cwe": 120,
+    "fwe": 50,
+}
+
+LONGBENCH_TASK_MAX_NEW_TOKENS = {
+    "hotpotqa": 32,
+    "qasper": 64,
+    "gov_report": 256,
+    "repobench-p": 128,
+}
+
 
 LONGBENCH_PROMPTS = {
     "hotpotqa": {
@@ -107,6 +120,12 @@ def resolve_input_device(model, fallback: str = "cuda:0") -> torch.device:
         return next(model.parameters()).device
     except StopIteration:
         return torch.device(fallback)
+
+
+def resolve_task_max_new_tokens(task: str, global_override: int, default_map: Dict[str, int], fallback: int = 128) -> int:
+    if global_override > 0:
+        return global_override
+    return default_map.get(task, fallback)
 
 
 def render_prompt(tokenizer, raw_prompt: str, apply_chat_template: bool, system_prompt: Optional[str]) -> str:
@@ -223,6 +242,20 @@ def build_longbench_prompt(tokenizer, example: Dict[str, Any], task: str, max_pr
     )
 
 
+def build_ruler_reasoning_prompt(example: Dict[str, Any], task: str, length: int) -> Tuple[str, Dict[str, Any]]:
+    raw_prompt = str(example["input"])
+    if task == "vt":
+        answer_prefix = str(example.get("answer_prefix", "Answer:")).strip()
+        if answer_prefix and not answer_prefix.endswith(" "):
+            answer_prefix = answer_prefix + " "
+        raw_prompt = (
+            raw_prompt.rstrip()
+            + "\n\nDo not explain. Output only the final variable names separated by spaces.\n"
+            + answer_prefix
+        )
+    return raw_prompt, {"benchmark": "ruler_reasoning", "task": task, "target_length": length}
+
+
 def generate_predictions_for_rows(
     *,
     model,
@@ -316,7 +349,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--longbench_lengths", nargs="+", type=int, default=[8192, 16384, 32768])
     parser.add_argument("--longbench_tasks", nargs="+", default=LONGBENCH_TASKS)
 
-    parser.add_argument("--max_new_tokens", type=int, default=128)
+    parser.add_argument("--max_new_tokens", type=int, default=0, help="Global override. Use 0 to apply task defaults (vt uses a project-tuned default of 64 with answer-only prompting; cwe=120, fwe=50).")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--apply_chat_template", action="store_true")
@@ -385,12 +418,13 @@ def main() -> None:
                 print(f"data_file: {data_file}")
                 print(f"pred_file: {pred_file}")
                 print("=" * 80)
+                task_max_new_tokens = resolve_task_max_new_tokens(task, args.max_new_tokens, RULER_REASONING_TASK_MAX_NEW_TOKENS, fallback=128)
                 result = generate_predictions_for_rows(
                     model=model,
                     tokenizer=tokenizer,
                     rows=rows,
                     pred_file=pred_file,
-                    max_new_tokens=args.max_new_tokens,
+                    max_new_tokens=task_max_new_tokens,
                     temperature=args.temperature,
                     top_p=args.top_p,
                     apply_chat_template=args.apply_chat_template,
@@ -398,7 +432,7 @@ def main() -> None:
                     limit=args.limit,
                     resume=args.resume,
                     model_input_device=model_input_device,
-                    prompt_builder=lambda ex: (ex["input"], {"benchmark": "ruler_reasoning", "task": task, "target_length": length}),
+                    prompt_builder=lambda ex, task=task, length=length: build_ruler_reasoning_prompt(ex, task, length),
                 )
                 print(
                     f"[DONE] benchmark=ruler_reasoning length={length} task={task} "
@@ -409,8 +443,9 @@ def main() -> None:
     if args.longbench_data_root:
         longbench_root = Path(args.longbench_data_root)
         for length in args.longbench_lengths:
-            max_prompt_tokens = length - args.max_new_tokens
             for task in args.longbench_tasks:
+                task_max_new_tokens = resolve_task_max_new_tokens(task, args.max_new_tokens, LONGBENCH_TASK_MAX_NEW_TOKENS, fallback=128)
+                max_prompt_tokens = length - task_max_new_tokens
                 data_file = longbench_root / f"{task}.jsonl"
                 if not data_file.exists():
                     print(f"[SKIP] Missing LongBench file: {data_file}")
@@ -427,7 +462,7 @@ def main() -> None:
                     tokenizer=tokenizer,
                     rows=rows,
                     pred_file=pred_file,
-                    max_new_tokens=args.max_new_tokens,
+                    max_new_tokens=task_max_new_tokens,
                     temperature=args.temperature,
                     top_p=args.top_p,
                     apply_chat_template=args.apply_chat_template,

@@ -1,0 +1,5 @@
+benchmark,task,metric,score,num_examples,null_predictions,avg_input_tokens,avg_generated_tokens,total_generation_seconds,min_example_score,max_example_score,pred_file
+longbench,hotpotqa,qa_f1,29.37809808294934,200,0,13395.555,10.935,539.3994882106781,0.0,100.0,results/exp_b/longbench/mamba/hotpotqa.pred.jsonl
+longbench,qasper,qa_f1,22.47994279380696,200,0,5314.14,54.56,908.1566400527954,0.0,100.0,results/exp_b/longbench/mamba/qasper.pred.jsonl
+longbench,gov_report,rouge_l_f1,14.58478984065433,200,0,9986.915,219.63,3340.215713739395,6.019151846785226,29.31596091205212,results/exp_b/longbench/mamba/gov_report.pred.jsonl
+longbench,repobench-p,edit_similarity,8.706868768312734,500,0,12249.574,126.824,5269.21857213974,1.043841336116913,100.0,results/exp_b/longbench/mamba/repobench-p.pred.jsonl

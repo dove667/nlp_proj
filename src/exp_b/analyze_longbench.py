@@ -101,8 +101,27 @@ def rouge_l_f1(pred: str, gold: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
-def code_exact_match(pred: str, gold: str) -> float:
-    return 1.0 if pred.strip() == gold.strip() else 0.0
+def edit_similarity(pred: str, gold: str) -> float:
+    # LongBench official metric for repobench-p
+    pred, gold = pred.strip(), gold.strip()
+    if not pred and not gold:
+        return 1.0
+    if not pred or not gold:
+        return 0.0
+    # Levenshtein distance via DP
+    m, n = len(pred), len(gold)
+    dp = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev = dp[0]
+        dp[0] = i
+        for j in range(1, n + 1):
+            temp = dp[j]
+            if pred[i - 1] == gold[j - 1]:
+                dp[j] = prev
+            else:
+                dp[j] = 1 + min(prev, dp[j], dp[j - 1])
+            prev = temp
+    return 1.0 - dp[n] / max(m, n)
 
 
 def task_metric(task: str) -> str:
@@ -111,7 +130,7 @@ def task_metric(task: str) -> str:
     if task == "gov_report":
         return "rouge_l_f1"
     if task == "repobench-p":
-        return "exact_match"
+        return "edit_similarity"
     raise ValueError(f"Unknown task: {task}")
 
 
@@ -121,7 +140,7 @@ def score_example(task: str, pred: str, outputs: List[str]) -> float:
     if task == "gov_report":
         return 100.0 * max((rouge_l_f1(pred, gold) for gold in outputs), default=0.0)
     if task == "repobench-p":
-        return 100.0 * max((code_exact_match(pred, gold) for gold in outputs), default=0.0)
+        return 100.0 * max((edit_similarity(pred, gold) for gold in outputs), default=0.0)
     raise ValueError(f"Unknown task: {task}")
 
 

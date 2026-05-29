@@ -198,18 +198,16 @@ python src/exp_b/analyze_longbench.py \
 
 - `hotpotqa`、`qasper`：使用 `QA F1`，比较预测答案和标准答案的词项重合程度。
 - `gov_report`：使用 `Rouge-L F1`，衡量生成摘要和参考摘要之间的最长公共子序列重合。
-- `repobench-p`：使用 `exact match`，只有预测代码与标准答案完全一致时才记为正确。
+- `repobench-p`：使用 `edit similarity`（LongBench 官方指标），基于 Levenshtein 编辑距离计算 `1 - edit_distance / max(len(pred), len(gold))`。不使用 exact match——模型通常会生成多行代码而标准答案只有一行，exact match 会导致分数虚低为 0。
 
 ### 可视化
 
 ```bash
 python src/exp_b/plot_longbench.py \
-  --summary_csv /data1/zsh/nlp_proj/results/exp_b/longbench/llama31/summary.csv \
-  --output_prefix /data1/zsh/nlp_proj/results/exp_b/longbench/llama31/longbench \
-  --title "Llama-3.1-8B-Instruct on LongBench"
-
-python src/exp_b/plot_longbench.py \
-  --summary_csv /data1/zsh/nlp_proj/results/exp_b/longbench/mamba/summary.csv \
-  --output_prefix /data1/zsh/nlp_proj/results/exp_b/longbench/mamba/longbench \
-  --title "Falcon3-Mamba-7B-Instruct on LongBench"
+  --llama_csv /data1/zsh/nlp_proj/results/exp_b/longbench/llama31/summary.csv \
+  --mamba_csv /data1/zsh/nlp_proj/results/exp_b/longbench/mamba/summary.csv \
+  --output_prefix /data1/zsh/nlp_proj/results/exp_b/longbench/longbench \
+  --title "Exp B LongBench"
 ```
+
+输出：`results/exp_b/longbench/longbench_compare.pdf`，两个模型并排分组柱状图。

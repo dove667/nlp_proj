@@ -113,9 +113,9 @@ def plot_score_figure(llama_df: pd.DataFrame, mamba_df: pd.DataFrame, title: str
     )
     fig.subplots_adjust(top=0.76, bottom=0.24, left=0.08, right=0.98, wspace=0.12)
 
-    out = output_prefix.with_name(output_prefix.name + "_model_compare.png")
+    out = output_prefix.with_name(output_prefix.name + "_model_compare.pdf")
     out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=240, bbox_inches="tight")
+    fig.savefig(out, bbox_inches="tight")
     plt.close(fig)
     return out
 

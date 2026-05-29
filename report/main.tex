@@ -398,10 +398,44 @@ A second observation is that Falcon3-Mamba is also much slower on the multi-key 
 
 The qualitative error pattern is also consistent: in failed multi-key cases, Falcon3-Mamba often outputs \emph{a} plausible number, but not the \emph{correct} number. In other words, the failure is less about total loss of the prompt and more about unstable key-value binding under interference. This aligns with a broader claim in the literature that state-space and recurrent-style models can be efficient on long sequences, yet remain weaker than attention-based models on exact content addressing and interference-heavy in-context association.
 
-\subsection{Implications for the rest of the project}
-Exp A already changes how the rest of the empirical study should be framed. First, it confirms that benchmark choice matters: if we had evaluated only the single-key setting, we would have concluded that Falcon3-Mamba is essentially perfect on long-context retrieval. Adding the multi-key task reverses that picture. Second, it suggests that the next empirical priority should be to separate retrieval failure from reasoning failure more explicitly. This motivates Exp B: harder RULER reasoning tasks and a small realistic LongBench subset. Third, the failed 32K Mamba run shows that systems feasibility is not an afterthought; it directly shapes what counts as usable long context in practice. This motivates keeping the serving and efficiency dimension in the final paper rather than relegating it to implementation notes.
+\subsection{A second completed experiment: synthetic reasoning under context scaling}
+We next evaluate the synthetic reasoning portion of Exp B using three RULER tasks: variable tracking (VT), common-word extraction (CWE), and frequent-word extraction (FWE). Unlike Exp A, the purpose here is not to study retrieval position, but to ask whether reasoning degrades as the same synthetic task is stretched from 4K to longer contexts while the answer information remains available.
 
-The current evidence is still narrow: only the retrieval baseline is complete, the model set is small, and Llama is nearly saturated on the present tasks. Even so, Exp A already supports the central thesis of the report: long-context ability is not a single scalar property, but a joint outcome of architecture, task difficulty, interference structure, and hardware-constrained implementation.
+Table~\ref{tab:expb-ruler} summarizes the main pattern. For Llama, VT remains near-saturated from 4K to 16K and only drops modestly at 32K, while CWE deteriorates sharply and FWE degrades more moderately. For Falcon3-Mamba, all three tasks are weaker overall, but the failure modes differ: VT declines steadily with length, CWE is poor even at 4K and collapses almost completely by 16K, while FWE is the strongest of the three yet still degrades at longer lengths.
+
+\begin{table}[h]
+\centering
+\caption{Exp B accuracy (\%) on RULER reasoning tasks. Falcon3-Mamba is not reported at 32K for the same stability reason discussed in Exp A.}
+\label{tab:expb-ruler}
+\begin{tabular}{lcccc}
+\toprule
+Model / Task & 4K & 8K & 16K & 32K \\
+\midrule
+Llama VT & 99.8 & 99.4 & 99.4 & 95.8 \\
+Llama CWE & 93.0 & 81.2 & 41.4 & 0.6 \\
+Llama FWE & 59.2 & 83.6 & 86.0 & 49.4 \\
+Falcon3-Mamba VT & 55.0 & 40.2 & 28.2 & -- \\
+Falcon3-Mamba CWE & 11.4 & 2.8 & 0.2 & -- \\
+Falcon3-Mamba FWE & 58.2 & 63.8 & 44.4 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two points matter most for the report. First, the comparison should be read mainly within each task rather than across tasks. In our current inference setup, VT uses a more answer-focused prompting policy so that variable names are emitted as a short structured list rather than after a long free-form explanation. This makes VT a cleaner controlled test of length-sensitive reasoning, but it also means that absolute scores across VT, CWE, and FWE should not be overinterpreted as a direct ranking of intrinsic task difficulty. Second, even under this controlled policy, the architectural contrast is still informative. Llama preserves strong performance much longer, whereas Falcon3-Mamba shows earlier degradation, especially on tasks that require recovering longer answer sets such as CWE.
+
+These results refine the project thesis in a useful way. Exp A already showed that retrieval failure is task-dependent; Exp B shows that the same is true for reasoning under context scaling. The relevant question is therefore not whether a model ``supports long context'' in the abstract, but which reasoning operations remain stable as the input grows.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.97\textwidth]{../results/exp_b/ruler_reasoning/ruler_reasoning_model_compare.png}
+\caption{Exp B RULER reasoning comparison curves. Each panel fixes one task and compares how Llama-3.1-8B-Instruct and Falcon3-Mamba-7B-Instruct degrade as context length grows.}
+\label{fig:expb-ruler-compare}
+\end{figure}
+
+\subsection{Implications for the rest of the project}
+Exp A and the synthetic RULER reasoning results together already change how the rest of the empirical study should be framed. First, they confirm that benchmark choice matters: single-target retrieval, multi-key retrieval, variable tracing, and word-frequency aggregation expose different weaknesses even within the same model family. Second, they motivate keeping a clear internal split inside Exp B. For synthetic RULER reasoning tasks, length scaling remains meaningful because the answer information is guaranteed to stay present as context grows; these tasks are therefore appropriate for controlled reasoning-with-scaling analysis. LongBench is different. Because evidence in realistic documents may lie anywhere in the input, artificially binning samples by target length or truncating the middle of the context would confound model quality with preprocessing decisions about which evidence survives. We therefore treat LongBench as an original-sample benchmark rather than as another synthetic length-scaling curve. Third, the failed 32K Mamba run shows that systems feasibility is not an afterthought; it directly shapes what counts as usable long context in practice. This motivates keeping the serving and efficiency dimension in the final paper rather than relegating it to implementation notes.
+
+The current evidence is still narrow: the model set is small, prompt policy is task-dependent, and the realistic LongBench portion is still being rerun under the corrected protocol. Even so, the completed RULER experiments already support the central thesis of the report: long-context ability is not a single scalar property, but a joint outcome of architecture, task structure, inference policy, and hardware-constrained implementation.
 
 \section{Discussion and Open Challenges}
 

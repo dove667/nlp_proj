@@ -81,29 +81,39 @@ python src/exp_b/analyze_ruler_reasoning.py \
 
 - `summary.csv`：每个 task / length 的汇总分数
 
+评估指标：
+
+- `RULER reasoning` 当前统一按 `accuracy` 统计。
+- 对单条样本，只有当标准答案里的所有目标项都出现在模型输出中时，才记为正确；否则记为错误。
+- 因此它本质上是一个基于答案项覆盖的 exact-match 风格判分，而不是部分给分。
+
 ### 可视化
 
 使用 [plot_ruler_reasoning.py](plot_ruler_reasoning.py)：
 
 ```bash
-python src/exp_b/plot_ruler_reasoning.py \
-  --summary_csv /data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/summary.csv \
-  --output_prefix /data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/ruler_reasoning \
-  --title "Llama-3.1-8B-Instruct on RULER Reasoning"
-
-python src/exp_b/plot_ruler_reasoning.py \
-  --summary_csv /data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/summary.csv \
-  --output_prefix /data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/ruler_reasoning \
-  --title "Falcon3-Mamba-7B-Instruct on RULER Reasoning"
+python src/exp_b/plot_ruler_reasoning.py   --llama_summary_csv /data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/summary.csv   --mamba_summary_csv /data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/summary.csv   --output_prefix /data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/ruler_reasoning   --title "Exp B RULER Reasoning"
 ```
 
 ## Part 2: LongBench
 
-这一部分不做人为长度分档，也不再做 head-tail 截断。LongBench 在本项目中的定义是：
+这一部分直接对原始 benchmark 样本做推理，结果解释聚焦于真实任务表现。
 
-- 直接对原始 benchmark 样本做推理
-- 不再尝试构造 `4K / 8K / 16K / 32K` 的伪长度曲线
-- 结果解释聚焦于真实任务表现，而不是 synthetic context scaling
+### `hotpotqa` / `qasper` / `gov_report` / `repobench-p` 这四个任务在做什么
+
+这四个子任务覆盖了 LongBench 中几种很不一样的长上下文能力。
+
+- `hotpotqa`：多文档问答任务。模型需要从多段材料中找到支持证据，并回答一个通常带有多跳性质的问题。
+- `qasper`：学术文档问答任务。模型需要阅读论文或论文片段，理解其中的方法、实验或结论，再给出简洁回答。
+- `gov_report`：长文档摘要任务。模型需要从较长的政府报告中提炼关键信息，生成一段覆盖主要结论的摘要。
+- `repobench-p`：代码补全任务。模型会拿到一段 repository context 和代码前缀，需要继续补出缺失的代码片段。
+
+可以把四者理解成：
+
+- `hotpotqa`：长上下文里的多跳问答
+- `qasper`：长文档阅读后的论文问答
+- `gov_report`：长报告摘要
+- `repobench-p`：长代码上下文补全
 
 ### 生成预测
 
@@ -156,6 +166,12 @@ python src/exp_b/analyze_longbench.py \
 输出文件：
 
 - `summary.csv`：每个 task 的汇总分数
+
+评估指标：
+
+- `hotpotqa`、`qasper`：使用 `QA F1`，比较预测答案和标准答案的词项重合程度。
+- `gov_report`：使用 `Rouge-L F1`，衡量生成摘要和参考摘要之间的最长公共子序列重合。
+- `repobench-p`：使用 `exact match`，只有预测代码与标准答案完全一致时才记为正确。
 
 ### 可视化
 

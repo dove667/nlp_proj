@@ -1,0 +1,13 @@
+benchmark,task,length,metric,score,num_examples,null_predictions,avg_input_tokens,avg_generated_tokens,total_generation_seconds,min_example_score,max_example_score,pred_file
+ruler_reasoning,vt,4096,accuracy,99.8,500,0,4099.194,16.644,543.1305623054504,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/4096/vt.pred.jsonl
+ruler_reasoning,vt,8192,accuracy,99.4,500,0,8200.23,16.592,813.0263197422028,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/8192/vt.pred.jsonl
+ruler_reasoning,vt,16384,accuracy,99.4,500,0,16387.018,16.62,1470.997853755951,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/16384/vt.pred.jsonl
+ruler_reasoning,vt,32768,accuracy,95.8,500,0,32774.586,16.828,3191.905279636383,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/32768/vt.pred.jsonl
+ruler_reasoning,cwe,4096,accuracy,93.0,500,0,3887.856,58.502,1357.5371379852295,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/4096/cwe.pred.jsonl
+ruler_reasoning,cwe,8192,accuracy,81.2,500,0,7982.074,58.86,1613.5513744354248,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/8192/cwe.pred.jsonl
+ruler_reasoning,cwe,16384,accuracy,41.4,500,0,16161.974,59.256,2440.6763401031494,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/16384/cwe.pred.jsonl
+ruler_reasoning,cwe,32768,accuracy,0.6,500,0,32541.86,57.646,4635.975945472717,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/32768/cwe.pred.jsonl
+ruler_reasoning,fwe,4096,accuracy,59.2,500,0,3849.796,48.46,1159.9509708881378,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/4096/fwe.pred.jsonl
+ruler_reasoning,fwe,8192,accuracy,83.6,500,0,7406.756,48.354,1371.26455616951,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/8192/fwe.pred.jsonl
+ruler_reasoning,fwe,16384,accuracy,86.0,500,0,14895.316,44.17,1947.9252395629883,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/16384/fwe.pred.jsonl
+ruler_reasoning,fwe,32768,accuracy,49.4,500,0,31257.756,27.36,3368.682546854019,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/llama31/32768/fwe.pred.jsonl

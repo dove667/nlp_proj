@@ -12,6 +12,18 @@
 - 子任务：`niah_single_1`、`niah_multikey_1`
 - 长度档位：Llama 为 4K、8K、16K、32K；Falcon3-Mamba 当前稳定结果为 4K、8K、16K
 
+### `niah_single_1` / `niah_multikey_1` 这两个任务在做什么
+
+这两个子任务都属于 RULER 的 NIAH（needle-in-a-haystack）检索测试，但干扰形式和检索难度不同。
+
+- `niah_single_1`：在长上下文里插入一条目标 key-value 信息，然后询问这条唯一目标对应的 value。这个任务更接近“单针检索”，重点看模型能否在很长的上下文中把唯一目标找出来。
+- `niah_multikey_1`：在长上下文里插入多组 key-value 信息，再给定其中一个 key，让模型返回对应的 value。这个任务不只是找到 needle，还要求在多组候选里完成正确的 key-value 绑定，因此比 `single_1` 更容易受到干扰。
+
+可以把两者理解成：
+
+- `niah_single_1`：长文本里找唯一目标
+- `niah_multikey_1`：长文本里在多组候选中找对目标并完成绑定
+
 ## Step 1: 生成预测
 
 命令行参数：

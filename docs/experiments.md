@@ -45,18 +45,22 @@
 
 **Benchmark**：
 - 数据来源：`RULER + LongBench`
-- RULER reasoning 子任务：variable tracking (vt)、common words extraction (cwe)、frequent words extraction (fwe)
-- LongBench 子集（4 个）：
+- `RULER reasoning` 子任务：variable tracking (vt)、common words extraction (cwe)、frequent words extraction (fwe)
+- `LongBench` 子集（4 个）：
   - HotpotQA（multi-doc QA，多跳推理）
   - Qasper（单文档学术 QA）
   - GovReport（长文档摘要）
   - RepoBench-P（代码上下文）
 
-**长度档位**：8K、16K、32K（Llama 测到 32K；Falcon3-Mamba 在当前环境下稳定测到 16K，因此若纳入 Exp B，需要单独标注长度上限差异）
+**实验定义拆分**：
+- `RULER reasoning` 负责测 `reasoning with context scaling`，因此保留 `4K / 8K / 16K / 32K` 长度档位
+- `LongBench` 不再做人为长度分档，也不再做 head-tail 截断；它只在原始 benchmark 样本上评测最终任务表现
 
-**指标**：accuracy / F1（任务相关）、accuracy decay slope $\Delta(L_1, L_2)$
+**指标**：
+- `RULER reasoning`：accuracy
+- `LongBench`：任务相关指标（QA F1 / Rouge-L F1 / exact match）
 
-**预期发现**：在 RULER retrieval 上表现较强的模型，在 RULER aggregation / multi-hop tracing 和 LongBench 多文档理解任务上仍可能显著掉点，且不同架构的掉点模式不同。
+**预期发现**：在 RULER retrieval 上表现较强的模型，在合成 reasoning 扩长测试和真实 LongBench 任务上仍可能显著掉点，且不同架构的掉点模式不同。
 
 ---
 
@@ -138,8 +142,8 @@
 - 数据来源只保留：`RULER + LongBench`
 - `RULER` 用于 retrieval 和 synthetic reasoning [https://github.com/NVIDIA/RULER.git](https://github.com/NVIDIA/RULER.git)
 - `Exp A` 具体使用 RULER 下的 `niah_single_1` / `niah_multikey_1`
-- `Exp B` 具体使用 RULER 的 reasoning 子任务与 LongBench 子集
-- `LongBench` 用于更真实的长输入理解任务
+- `Exp B` 具体拆成两部分：RULER reasoning 用于长度扩展下的推理退化测试，LongBench 用于原始真实样本上的长输入理解任务
+- `LongBench` 在本项目中不再做人为长度切片，以避免把模型能力和截断策略混在一起
 - 不专门纳入“短输入长生成”任务
 - 当前正式实验只保留两类经典路线：Transformer（Llama）与 SSM（Falcon3-Mamba）；`Zamba2` 不再纳入评测矩阵
 - `Falcon3-Mamba-7B-Instruct` 的 32K 配置不纳入正式结果：在当前 24GB RTX 4090 实验环境中，单卡 OOM，多卡 `device_map=auto` 在 Mamba CUDA kernel 路径上存在稳定性问题

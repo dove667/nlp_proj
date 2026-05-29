@@ -4,15 +4,13 @@
 import argparse
 import csv
 import json
-import math
 import re
 import string
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List
 
 
-RULER_TASKS = ["vt", "cwe", "fwe"]
 LONGBENCH_TASKS = ["hotpotqa", "qasper", "gov_report", "repobench-p"]
 
 
@@ -53,21 +51,6 @@ def get_outputs(example: Dict[str, Any]) -> List[str]:
     if isinstance(outputs, list):
         return [str(x) for x in outputs]
     return [str(outputs)]
-
-
-def answer_in_prediction(answer: str, pred: str) -> bool:
-    answer_norm = normalize_text(answer)
-    pred_norm = normalize_text(pred)
-    if not answer_norm:
-        return False
-    if re.fullmatch(r"[0-9,\s.\-]+", answer_norm):
-        pattern = r"(?<!\d)" + re.escape(answer_norm) + r"(?!\d)"
-        return re.search(pattern, pred_norm) is not None
-    return answer_norm in pred_norm
-
-
-def ruler_score(pred: str, outputs: List[str]) -> float:
-    return 100.0 if all(answer_in_prediction(ans, pred) for ans in outputs) else 0.0
 
 
 def normalize_qa_answer(text: str) -> str:
@@ -123,8 +106,6 @@ def code_exact_match(pred: str, gold: str) -> float:
 
 
 def task_metric(task: str) -> str:
-    if task in RULER_TASKS:
-        return "accuracy"
     if task in {"hotpotqa", "qasper"}:
         return "qa_f1"
     if task == "gov_report":
@@ -135,8 +116,6 @@ def task_metric(task: str) -> str:
 
 
 def score_example(task: str, pred: str, outputs: List[str]) -> float:
-    if task in RULER_TASKS:
-        return ruler_score(pred, outputs)
     if task in {"hotpotqa", "qasper"}:
         return 100.0 * max((qa_f1_score(pred, gold) for gold in outputs), default=0.0)
     if task == "gov_report":
@@ -166,11 +145,8 @@ def summarize_rows(task: str, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Analyze Exp B predictions for RULER reasoning and LongBench.")
+    parser = argparse.ArgumentParser(description="Analyze Exp B LongBench predictions.")
     parser.add_argument("--pred_root", required=True)
-    parser.add_argument("--ruler_lengths", nargs="+", type=int, default=[8192, 16384, 32768])
-    parser.add_argument("--ruler_tasks", nargs="+", default=RULER_TASKS)
-    parser.add_argument("--longbench_lengths", nargs="+", type=int, default=[8192, 16384, 32768])
     parser.add_argument("--longbench_tasks", nargs="+", default=LONGBENCH_TASKS)
     return parser.parse_args()
 
@@ -180,65 +156,29 @@ def main() -> None:
     pred_root = Path(args.pred_root)
 
     summary_rows: List[Dict[str, Any]] = []
-    decay_rows: List[Dict[str, Any]] = []
 
-    groups = [
-        ("ruler_reasoning", args.ruler_lengths, args.ruler_tasks),
-        ("longbench", args.longbench_lengths, args.longbench_tasks),
-    ]
-
-    for benchmark, lengths, tasks in groups:
-        for task in tasks:
-            per_task = []
-            for length in lengths:
-                pred_file = pred_root / benchmark / str(length) / f"{task}.pred.jsonl"
-                if not pred_file.exists():
-                    print(f"[SKIP] Missing prediction file: {pred_file}")
-                    continue
-                rows = read_jsonl(pred_file)
-                summary = summarize_rows(task, rows)
-                summary.update(
-                    {
-                        "benchmark": benchmark,
-                        "task": task,
-                        "length": length,
-                        "pred_file": str(pred_file),
-                    }
-                )
-                summary_rows.append(summary)
-                per_task.append(summary)
-
-            per_task.sort(key=lambda x: x["length"])
-            if not per_task:
-                continue
-            base = per_task[0]
-            for current in per_task[1:]:
-                delta = current["score"] - base["score"]
-                denom = current["length"] - base["length"]
-                slope_per_1k = delta / denom * 1000 if denom else math.nan
-                decay_rows.append(
-                    {
-                        "benchmark": benchmark,
-                        "task": task,
-                        "metric": current["metric"],
-                        "from_length": base["length"],
-                        "to_length": current["length"],
-                        "from_score": base["score"],
-                        "to_score": current["score"],
-                        "delta_score": delta,
-                        "slope_per_1k_tokens": slope_per_1k,
-                    }
-                )
+    for task in args.longbench_tasks:
+        pred_file = pred_root / f"{task}.pred.jsonl"
+        if not pred_file.exists():
+            print(f"[SKIP] Missing prediction file: {pred_file}")
+            continue
+        rows = read_jsonl(pred_file)
+        summary = summarize_rows(task, rows)
+        summary.update(
+            {
+                "benchmark": "longbench",
+                "task": task,
+                "pred_file": str(pred_file),
+            }
+        )
+        summary_rows.append(summary)
 
     summary_path = pred_root / "summary.csv"
-    decay_path = pred_root / "decay.csv"
-
     write_csv(
         summary_path,
         [
             "benchmark",
             "task",
-            "length",
             "metric",
             "score",
             "num_examples",
@@ -253,24 +193,7 @@ def main() -> None:
         summary_rows,
     )
 
-    write_csv(
-        decay_path,
-        [
-            "benchmark",
-            "task",
-            "metric",
-            "from_length",
-            "to_length",
-            "from_score",
-            "to_score",
-            "delta_score",
-            "slope_per_1k_tokens",
-        ],
-        decay_rows,
-    )
-
     print(f"Saved summary to: {summary_path}")
-    print(f"Saved decay table to: {decay_path}")
 
 
 if __name__ == "__main__":

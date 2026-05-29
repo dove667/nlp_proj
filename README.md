@@ -8,7 +8,7 @@
 - `docs/experiments.md`：实验主线
 - `docs/report_outline.md`：报告提纲
 - `src/exp_a/`：Exp A，RULER NIAH retrieval
-- `src/exp_b/`：Exp B，RULER reasoning + LongBench
+- `src/exp_b/`：Exp B，拆分为 RULER reasoning（长度扩展推理）与 LongBench（原始样本真实任务）
 - `src/exp_c/`：Exp C，推理时扩窗 / KV 优化方法
 - `src/exp_d/`：Exp D，serving 性能测试
 - `src/models/`：模型与方法实现
@@ -95,7 +95,7 @@ PY
 
 - 数据来源：`RULER + LongBench`
 - `Exp A` 使用 RULER 下的 NIAH 子任务：`niah_single_1`、`niah_multikey_1`
-- `Exp B` 使用 RULER reasoning 子任务和 LongBench 子集
+- `Exp B` 同时包含两类定义不同的评测：RULER reasoning 做长度扩展下的推理退化分析，LongBench 直接跑原始样本
 - `Exp C` 复用 `Exp A / Exp B` 的数据
 - `Exp D` 关注 TTFT、TPOT、throughput、peak GPU memory
 

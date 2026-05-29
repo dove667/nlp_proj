@@ -13,40 +13,11 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-LONG_RULER_TASKS = ["vt", "cwe", "fwe"]
-LONGBENCH_TASKS = ["hotpotqa", "qasper", "gov_report", "repobench-p"]
-
+RULER_TASKS = ["vt", "cwe", "fwe"]
 RULER_REASONING_TASK_MAX_NEW_TOKENS = {
     "vt": 64,
     "cwe": 120,
     "fwe": 50,
-}
-
-LONGBENCH_TASK_MAX_NEW_TOKENS = {
-    "hotpotqa": 32,
-    "qasper": 64,
-    "gov_report": 256,
-    "repobench-p": 128,
-}
-
-
-LONGBENCH_PROMPTS = {
-    "hotpotqa": {
-        "prefix": "Answer the question based on the given passages. Only give the final short answer.\n\nPassages:\n",
-        "suffix": "\n\nQuestion: {question}\nAnswer:",
-    },
-    "qasper": {
-        "prefix": "Read the following paper excerpt and answer the question concisely. If the answer is not stated in the document, say so directly.\n\nPaper:\n",
-        "suffix": "\n\nQuestion: {question}\nAnswer:",
-    },
-    "gov_report": {
-        "prefix": "Write a concise summary of the following government report. Focus on the key findings and conclusions.\n\nReport:\n",
-        "suffix": "\n\nSummary:",
-    },
-    "repobench-p": {
-        "prefix": "Complete the code snippet based on the repository context. Only output the missing code continuation, with no explanation.\n\nRepository context:\n",
-        "suffix": "\n\nCode prefix:\n{question}\n\nCompletion:",
-    },
 }
 
 
@@ -65,19 +36,6 @@ def append_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
     with path.open("a", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def get_outputs(example: Dict[str, Any]) -> List[str]:
-    outputs = example.get("outputs")
-    if outputs is None:
-        outputs = example.get("output")
-    if outputs is None:
-        outputs = example.get("answers")
-    if outputs is None:
-        return []
-    if isinstance(outputs, list):
-        return [str(x) for x in outputs]
-    return [str(outputs)]
 
 
 def make_sample_id(example: Dict[str, Any], row_idx: int) -> str:
@@ -187,61 +145,6 @@ def generate_one(
     return pred, input_len, int(new_ids.shape[-1]), elapsed
 
 
-def truncate_longbench_context(
-    tokenizer,
-    *,
-    prefix: str,
-    context: str,
-    suffix: str,
-    max_prompt_tokens: int,
-) -> Tuple[str, Dict[str, Any]]:
-    prefix_ids = tokenizer.encode(prefix, add_special_tokens=False)
-    suffix_ids = tokenizer.encode(suffix, add_special_tokens=False)
-    context_ids = tokenizer.encode(context, add_special_tokens=False)
-
-    budget = max_prompt_tokens - len(prefix_ids) - len(suffix_ids)
-    if budget <= 0:
-        raise ValueError(
-            f"Prompt budget too small: max_prompt_tokens={max_prompt_tokens}, "
-            f"prefix={len(prefix_ids)}, suffix={len(suffix_ids)}"
-        )
-
-    original_context_tokens = len(context_ids)
-    truncated = False
-    if len(context_ids) > budget:
-        truncated = True
-        head = budget // 2
-        tail = budget - head
-        kept_ids = context_ids[:head] + context_ids[-tail:]
-        context_text = tokenizer.decode(kept_ids, skip_special_tokens=True)
-    else:
-        context_text = context
-
-    prompt = prefix + context_text + suffix
-    prompt_tokens = len(tokenizer.encode(prompt, add_special_tokens=False))
-    return prompt, {
-        "prompt_tokens": prompt_tokens,
-        "max_prompt_tokens": max_prompt_tokens,
-        "context_tokens_before_truncation": original_context_tokens,
-        "context_truncated": truncated,
-    }
-
-
-def build_longbench_prompt(tokenizer, example: Dict[str, Any], task: str, max_prompt_tokens: int) -> Tuple[str, Dict[str, Any]]:
-    spec = LONGBENCH_PROMPTS[task]
-    question = str(example.get("input", ""))
-    context = str(example.get("context", ""))
-    prefix = spec["prefix"]
-    suffix = spec["suffix"].format(question=question)
-    return truncate_longbench_context(
-        tokenizer,
-        prefix=prefix,
-        context=context,
-        suffix=suffix,
-        max_prompt_tokens=max_prompt_tokens,
-    )
-
-
 def build_ruler_reasoning_prompt(example: Dict[str, Any], task: str, length: int) -> Tuple[str, Dict[str, Any]]:
     raw_prompt = str(example["input"])
     if task == "vt":
@@ -335,21 +238,18 @@ def generate_predictions_for_rows(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate predictions for Exp B RULER reasoning and LongBench tasks."
-    )
+    parser = argparse.ArgumentParser(description="Generate predictions for Exp B RULER reasoning tasks.")
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--out_root", required=True)
-
-    parser.add_argument("--ruler_data_root", default=None)
+    parser.add_argument("--ruler_data_root", required=True)
     parser.add_argument("--ruler_lengths", nargs="+", type=int, default=[8192, 16384, 32768])
-    parser.add_argument("--ruler_tasks", nargs="+", default=LONG_RULER_TASKS)
-
-    parser.add_argument("--longbench_data_root", default=None)
-    parser.add_argument("--longbench_lengths", nargs="+", type=int, default=[8192, 16384, 32768])
-    parser.add_argument("--longbench_tasks", nargs="+", default=LONGBENCH_TASKS)
-
-    parser.add_argument("--max_new_tokens", type=int, default=0, help="Global override. Use 0 to apply task defaults (vt uses a project-tuned default of 64 with answer-only prompting; cwe=120, fwe=50).")
+    parser.add_argument("--ruler_tasks", nargs="+", default=RULER_TASKS)
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=0,
+        help="Global override. Use 0 to apply task defaults (vt=64 with answer-only prompting; cwe=120; fwe=50).",
+    )
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--apply_chat_template", action="store_true")
@@ -365,9 +265,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-
-    if not args.ruler_data_root and not args.longbench_data_root:
-        raise ValueError("Provide at least one of --ruler_data_root or --longbench_data_root.")
 
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -400,85 +297,46 @@ def main() -> None:
     model_input_device = resolve_input_device(model, fallback=args.model_device)
     print(f"Model input device: {model_input_device}")
 
+    ruler_root = Path(args.ruler_data_root)
     out_root = Path(args.out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
-    if args.ruler_data_root:
-        ruler_root = Path(args.ruler_data_root)
-        for length in args.ruler_lengths:
-            for task in args.ruler_tasks:
-                data_file = ruler_root / str(length) / task / "test.jsonl"
-                if not data_file.exists():
-                    print(f"[SKIP] Missing RULER file: {data_file}")
-                    continue
-                rows = read_jsonl(data_file)
-                pred_file = out_root / "ruler_reasoning" / str(length) / f"{task}.pred.jsonl"
-                print("=" * 80)
-                print(f"benchmark: ruler_reasoning | length={length} | task={task}")
-                print(f"data_file: {data_file}")
-                print(f"pred_file: {pred_file}")
-                print("=" * 80)
-                task_max_new_tokens = resolve_task_max_new_tokens(task, args.max_new_tokens, RULER_REASONING_TASK_MAX_NEW_TOKENS, fallback=128)
-                result = generate_predictions_for_rows(
-                    model=model,
-                    tokenizer=tokenizer,
-                    rows=rows,
-                    pred_file=pred_file,
-                    max_new_tokens=task_max_new_tokens,
-                    temperature=args.temperature,
-                    top_p=args.top_p,
-                    apply_chat_template=args.apply_chat_template,
-                    system_prompt=args.system_prompt,
-                    limit=args.limit,
-                    resume=args.resume,
-                    model_input_device=model_input_device,
-                    prompt_builder=lambda ex, task=task, length=length: build_ruler_reasoning_prompt(ex, task, length),
-                )
-                print(
-                    f"[DONE] benchmark=ruler_reasoning length={length} task={task} "
-                    f"num_examples={result['num_examples']} reused={result['reused_predictions']} "
-                    f"generated={result['new_predictions']}"
-                )
-
-    if args.longbench_data_root:
-        longbench_root = Path(args.longbench_data_root)
-        for length in args.longbench_lengths:
-            for task in args.longbench_tasks:
-                task_max_new_tokens = resolve_task_max_new_tokens(task, args.max_new_tokens, LONGBENCH_TASK_MAX_NEW_TOKENS, fallback=128)
-                max_prompt_tokens = length - task_max_new_tokens
-                data_file = longbench_root / f"{task}.jsonl"
-                if not data_file.exists():
-                    print(f"[SKIP] Missing LongBench file: {data_file}")
-                    continue
-                rows = read_jsonl(data_file)
-                pred_file = out_root / "longbench" / str(length) / f"{task}.pred.jsonl"
-                print("=" * 80)
-                print(f"benchmark: longbench | target_length={length} | task={task}")
-                print(f"data_file: {data_file}")
-                print(f"pred_file: {pred_file}")
-                print("=" * 80)
-                result = generate_predictions_for_rows(
-                    model=model,
-                    tokenizer=tokenizer,
-                    rows=rows,
-                    pred_file=pred_file,
-                    max_new_tokens=task_max_new_tokens,
-                    temperature=args.temperature,
-                    top_p=args.top_p,
-                    apply_chat_template=args.apply_chat_template,
-                    system_prompt=args.system_prompt,
-                    limit=args.limit,
-                    resume=args.resume,
-                    model_input_device=model_input_device,
-                    prompt_builder=lambda ex, task=task, length=length, max_prompt_tokens=max_prompt_tokens: (
-                        lambda prompt, meta: (prompt, {**meta, "benchmark": "longbench", "task": task, "target_length": length})
-                    )(*build_longbench_prompt(tokenizer, ex, task, max_prompt_tokens)),
-                )
-                print(
-                    f"[DONE] benchmark=longbench length={length} task={task} "
-                    f"num_examples={result['num_examples']} reused={result['reused_predictions']} "
-                    f"generated={result['new_predictions']}"
-                )
+    for length in args.ruler_lengths:
+        for task in args.ruler_tasks:
+            data_file = ruler_root / str(length) / task / "test.jsonl"
+            if not data_file.exists():
+                print(f"[SKIP] Missing RULER file: {data_file}")
+                continue
+            rows = read_jsonl(data_file)
+            pred_file = out_root / str(length) / f"{task}.pred.jsonl"
+            print("=" * 80)
+            print(f"benchmark: ruler_reasoning | length={length} | task={task}")
+            print(f"data_file: {data_file}")
+            print(f"pred_file: {pred_file}")
+            print("=" * 80)
+            task_max_new_tokens = resolve_task_max_new_tokens(
+                task, args.max_new_tokens, RULER_REASONING_TASK_MAX_NEW_TOKENS, fallback=128
+            )
+            result = generate_predictions_for_rows(
+                model=model,
+                tokenizer=tokenizer,
+                rows=rows,
+                pred_file=pred_file,
+                max_new_tokens=task_max_new_tokens,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                apply_chat_template=args.apply_chat_template,
+                system_prompt=args.system_prompt,
+                limit=args.limit,
+                resume=args.resume,
+                model_input_device=model_input_device,
+                prompt_builder=lambda ex, task=task, length=length: build_ruler_reasoning_prompt(ex, task, length),
+            )
+            print(
+                f"[DONE] benchmark=ruler_reasoning length={length} task={task} "
+                f"num_examples={result['num_examples']} reused={result['reused_predictions']} "
+                f"generated={result['new_predictions']}"
+            )
 
     print("=" * 80)
     print(f"Prediction generation finished under: {out_root}")

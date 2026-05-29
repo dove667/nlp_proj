@@ -1,0 +1,10 @@
+benchmark,task,length,metric,score,num_examples,null_predictions,avg_input_tokens,avg_generated_tokens,total_generation_seconds,min_example_score,max_example_score,pred_file
+ruler_reasoning,vt,4096,accuracy,55.0,500,0,4073.906,19.022,916.9277431964874,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/4096/vt.pred.jsonl
+ruler_reasoning,vt,8192,accuracy,40.2,500,0,8174.25,18.088,1181.9730427265167,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/8192/vt.pred.jsonl
+ruler_reasoning,vt,16384,accuracy,28.2,500,0,16366.29,17.04,1727.5992896556854,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/16384/vt.pred.jsonl
+ruler_reasoning,cwe,4096,accuracy,11.4,500,0,3874.66,63.25,2420.447613477707,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/4096/cwe.pred.jsonl
+ruler_reasoning,cwe,8192,accuracy,2.8,500,0,7952.074,66.404,2832.669461250305,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/8192/cwe.pred.jsonl
+ruler_reasoning,cwe,16384,accuracy,0.2,500,0,16138.004,72.354,3661.221349000931,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/16384/cwe.pred.jsonl
+ruler_reasoning,fwe,4096,accuracy,58.2,500,0,3729.784,13.61,711.9483349323273,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/4096/fwe.pred.jsonl
+ruler_reasoning,fwe,8192,accuracy,63.8,500,0,7499.512,13.478,986.4011223316193,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/8192/fwe.pred.jsonl
+ruler_reasoning,fwe,16384,accuracy,44.4,500,0,15206.778,13.512,1537.6739642620087,0.0,100.0,/data1/zsh/nlp_proj/results/exp_b/ruler_reasoning/mamba/16384/fwe.pred.jsonl

@@ -165,15 +165,35 @@ def generate_one(
     return pred, input_len, int(new_ids.shape[-1]), elapsed
 
 
-def build_longbench_prompt(example: Dict[str, Any], task: str) -> Tuple[str, Dict[str, Any]]:
+def build_longbench_prompt(
+    example: Dict[str, Any],
+    task: str,
+    tokenizer=None,
+    max_input_tokens: int = 0,
+) -> Tuple[str, Dict[str, Any]]:
     spec = LONGBENCH_PROMPTS[task]
     question = str(example.get("input", ""))
     context = str(example.get("context", ""))
-    raw_prompt = spec["prefix"] + context + spec["suffix"].format(question=question)
+    suffix = spec["suffix"].format(question=question)
+    truncated = False
+
+    if tokenizer is not None and max_input_tokens > 0:
+        overhead_ids = tokenizer.encode(spec["prefix"] + suffix, add_special_tokens=False)
+        budget = max_input_tokens - len(overhead_ids)
+        if budget <= 0:
+            raise ValueError(f"max_input_tokens={max_input_tokens} too small for prompt overhead ({len(overhead_ids)} tokens)")
+        ctx_ids = tokenizer.encode(context, add_special_tokens=False)
+        if len(ctx_ids) > budget:
+            # keep the tail of the context (most relevant for retrieval tasks)
+            ctx_ids = ctx_ids[-budget:]
+            context = tokenizer.decode(ctx_ids, skip_special_tokens=True)
+            truncated = True
+
+    raw_prompt = spec["prefix"] + context + suffix
     return raw_prompt, {
         "benchmark": "longbench",
         "task": task,
-        "context_truncated": False,
+        "context_truncated": truncated,
     }
 
 
@@ -277,6 +297,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attn_implementation", default=None, choices=[None, "sdpa", "flash_attention_2", "eager"])
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--max_input_tokens",
+        type=int,
+        default=0,
+        help="Truncate context so total input tokens stay within this limit. 0 = no truncation. "
+             "Recommended for Mamba on 24GB: 20000.",
+    )
     return parser.parse_args()
 
 
@@ -285,6 +312,8 @@ def main() -> None:
 
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    # Prevents fragmentation OOM on Mamba with long contexts (PyTorch caching allocator)
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
     print("Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(
@@ -344,7 +373,11 @@ def main() -> None:
             limit=args.limit,
             resume=args.resume,
             model_input_device=model_input_device,
-            prompt_builder=lambda ex, task=task: build_longbench_prompt(ex, task),
+            prompt_builder=lambda ex, task=task: build_longbench_prompt(
+                ex, task,
+                tokenizer=tokenizer if args.max_input_tokens > 0 else None,
+                max_input_tokens=args.max_input_tokens,
+            ),
         )
         print(
             f"[DONE] benchmark=longbench task={task} "

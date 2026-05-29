@@ -64,38 +64,7 @@
 
 ---
 
-## Exp C：推理时优化方法测试
-
-**问题**：不改变模型权重的推理时方法能在多大程度上提升 Transformer 的有效上下文长度？对 retrieval 和 reasoning 的提升是否对称？
-
-**基础模型**：Llama-3.1-8B-Instruct（仅 Transformer，因为这些方法都针对 Transformer KV cache 设计）
-
-**方法**（每类选一个）：
-
-| 类别 | 方法 | 改变什么 |
-|---|---|---|
-| Baseline | 原生推理 | — |
-| Positional extension | YaRN | 可接受长度（RoPE 插值） |
-| Attention reorganization | Self-Extend | 注意力结构（bi-level attention） |
-| KV quantization | KIVI | KV cache 数值精度（2-bit 非对称量化） |
-| KV eviction | SnapKV | prefill 阶段 KV 选择 |
-| KV retrieval | FIER | 每步 token 级 KV 检索 |
-| Streaming | StreamingLLM | sink + sliding window |
-
-**Benchmark**：
-- 复用 Exp A 的 **RULER NIAH retrieval 子任务**：`niah_single_1`、`niah_multikey_1`
-- 复用 Exp B 的 **RULER reasoning 子任务**：`common words aggregation`、`multi-hop tracing`
-- 复用 Exp B 的 LongBench 子集：优先 `HotpotQA`，必要时补 `Qasper`
-
-**长度档位**：32K、64K、128K（超出 Llama 原生舒适区的档位）
-
-**横向参考**：在同一张图中保留 Exp A/B 中 Falcon3-Mamba 的结果作为参考线，直观对比"架构效率"与"推理时优化"两条路线的收益
-
-**指标**：accuracy gain vs. baseline、$L_\text{eff}$ 变化、latency overhead
-
----
-
-## Exp D：系统性能测试
+## Exp C：系统性能测试
 
 **问题**：在真实 serving 场景下，不同架构、不同推理后端、不同推理优化方法的吞吐与延迟如何？
 
@@ -109,7 +78,6 @@
 |---|---|
 | 架构 | Llama（Transformer）/ Falcon3-Mamba（SSM） |
 | Serving backend（仅 Llama） | HuggingFace Transformers / vLLM / SGLang |
-| 推理优化方法（仅 Llama） | baseline / KIVI / SnapKV / FIER / StreamingLLM |
 | Context length | 4K、8K、16K、32K |
 | Batch size | 1、4、8、16 |
 | Output length | 固定 128 tokens |
@@ -125,7 +93,6 @@
 2. Peak memory vs. context length（同上，最能体现 SSM 无 KV cache 增长的优势）
 3. Throughput vs. batch size（Llama 不同 backend）
 4. Peak memory vs. context length（Llama × 不同推理优化方法）
-5. Accuracy vs. latency trade-off（Exp C 的 accuracy + Exp D 的 latency，每个方法一个点）
 
 ---
 
@@ -134,8 +101,7 @@
 | 实验 | 模型 / 方法 |
 |---|---|
 | A + B | Llama-3.1-8B-Instruct、tiiuae/Falcon3-Mamba-7B-Instruct |
-| C | Llama-3.1-8B-Instruct × {baseline, YaRN, Self-Extend, KIVI, SnapKV, FIER, StreamingLLM} |
-| D | Llama × {HF, vLLM, SGLang} × {baseline, KIVI, SnapKV, FIER, StreamingLLM}；Falcon3-Mamba（HF 原生） |
+| C | Llama × {HF, vLLM, SGLang} × {baseline, KIVI, SnapKV, FIER, StreamingLLM}；Falcon3-Mamba（HF 原生） |
 
 ## 当前范围总结
 

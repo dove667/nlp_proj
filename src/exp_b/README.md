@@ -135,12 +135,39 @@ python src/exp_b/gen_pred_longbench.py \
   --longbench_data_root /data1/zsh/datasets/LongBench \
   --longbench_tasks hotpotqa qasper gov_report repobench-p \
   --max_new_tokens 0 \
+  --max_input_tokens 20000 \
   --dtype bf16 \
   --device_map none \
   --model_device cuda:0 \
   --apply_chat_template \
   --resume
 ```
+
+**Mamba 单卡显存限制说明**
+
+Falcon3-Mamba-7B-Instruct 在 24GB RTX 4090 上，使用 `mamba_ssm` CUDA kernel（`nlp_proj` conda 环境）时，`generate()` 峰值显存随序列长度线性增长约 0.44 GB/1K tokens：
+
+| 序列长度 | 峰值显存 | 状态 |
+|----------|----------|------|
+| 16000    | 21.62 GB | OK   |
+| 18000    | 22.50 GB | OK   |
+| 20000    | 23.38 GB | OK   |
+| 21000    | —        | OOM  |
+
+安全上限为 **20000 tokens**（含 prompt overhead）。不能用 `device_map="auto"` 多卡分片（Mamba CUDA kernel 路径存在稳定性问题）。
+
+**碎片 OOM 问题**：PyTorch 的 caching allocator 在长序列推理时容易产生内存碎片，导致实际可用连续块不足，即使理论显存够用也会 OOM（报错中会出现 `reserved but unallocated` 远大于申请量的情况）。代码已在启动时设置 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 解决此问题，无需手动设置。
+
+`--max_input_tokens 20000` 会在 tokenize 之前截断 context 尾部，保留 prompt 结构，并在输出中记录 `context_truncated: true`。各任务受影响情况（基于 Mamba tokenizer 实测）：
+
+| 任务 | 样本数 | 超 20K 条数 | 占比 |
+|------|--------|-------------|------|
+| hotpotqa | 200 | 0 | 0% |
+| qasper | 200 | 2 | 1% |
+| gov_report | 200 | 13 | 6% |
+| repobench-p | 500 | 80 | 16% |
+
+Llama 不受此限制，不需要传 `--max_input_tokens`。
 
 LongBench 的项目内默认生成长度：
 

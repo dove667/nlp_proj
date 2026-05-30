@@ -1,36 +1,15 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import argparse
 import csv
 import json
 import re
 import string
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-
-LONGBENCH_TASKS = ["hotpotqa", "qasper", "gov_report", "repobench-p"]
-
-
-def read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
-def write_csv(path: Path, fieldnames: List[str], rows: Iterable[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: row.get(k) for k in fieldnames})
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import read_jsonl, write_csv
 
 
 def normalize_text(s: str) -> str:
@@ -102,13 +81,11 @@ def rouge_l_f1(pred: str, gold: str) -> float:
 
 
 def edit_similarity(pred: str, gold: str) -> float:
-    # LongBench official metric for repobench-p
     pred, gold = pred.strip(), gold.strip()
     if not pred and not gold:
         return 1.0
     if not pred or not gold:
         return 0.0
-    # Levenshtein distance via DP
     m, n = len(pred), len(gold)
     dp = list(range(n + 1))
     for i in range(1, m + 1):
@@ -166,7 +143,7 @@ def summarize_rows(task: str, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyze Exp B LongBench predictions.")
     parser.add_argument("--pred_root", required=True)
-    parser.add_argument("--longbench_tasks", nargs="+", default=LONGBENCH_TASKS)
+    parser.add_argument("--longbench_tasks", nargs="+", default=["hotpotqa", "qasper", "gov_report", "repobench-p"])
     return parser.parse_args()
 
 

@@ -1,30 +1,12 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
-
-def read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
-def write_csv(path: Path, fieldnames: List[str], rows: Iterable[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: row.get(k) for k in fieldnames})
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import read_jsonl, write_csv
 
 
 def compute_position_bucket(row: Dict[str, Any], num_bins: int) -> Tuple[int, float]:

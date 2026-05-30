@@ -8,19 +8,18 @@ dependencies = [
   "accelerate==1.13.0",
   "datasets==4.8.5",
   "huggingface-hub==0.36.2",
+  "matplotlib==3.10.9",
   "nltk==3.9.4",
   "numpy==2.4.6",
   "pandas==3.0.3",
-  "PyYAML==6.0.3",
   "safetensors==0.7.0",
   "sentencepiece==0.2.1",
   "tokenizers==0.21.4",
   "torch==2.5.1+cu121",
-  "torchaudio==2.5.1+cu121",
-  "torchvision==0.20.1+cu121",
   "tqdm==4.67.3",
   "transformers==4.49.0",
   "triton==3.1.0",
+  "vllm==0.7.3",
   "wonderwords==3.0.1",
 ]
 
@@ -39,5 +38,3 @@ explicit = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu121" }
-torchaudio = { index = "pytorch-cu121" }
-torchvision = { index = "pytorch-cu121" }

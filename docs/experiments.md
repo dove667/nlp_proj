@@ -77,7 +77,7 @@
 | 维度 | 取值 |
 |---|---|
 | 架构 | Llama（Transformer）/ Falcon3-Mamba（SSM） |
-| Serving backend（仅 Llama） | HuggingFace Transformers / vLLM / SGLang |
+| Serving backend（仅 Llama） | HuggingFace Transformers / vLLM |
 | Context length | 4K、8K、16K、32K |
 | Batch size | 1、4、8、16 |
 | Output length | 固定 128 tokens |
@@ -89,10 +89,9 @@
 - Peak GPU memory
 
 **核心图**：
-1. TTFT vs. context length（Llama 不同 backend + Falcon3-Mamba 并列）
-2. Peak memory vs. context length（同上，最能体现 SSM 无 KV cache 增长的优势）
-3. Throughput vs. batch size（Llama 不同 backend）
-4. Peak memory vs. context length（Llama × 不同推理优化方法）
+1. TTFT vs. context length（Llama HF/vLLM + Mamba HF 并列）
+2. Peak memory vs. context length（同上）
+3. Throughput vs. batch size（Llama HF/vLLM 对比）
 
 ---
 
@@ -101,7 +100,7 @@
 | 实验 | 模型 / 方法 |
 |---|---|
 | A + B | Llama-3.1-8B-Instruct、tiiuae/Falcon3-Mamba-7B-Instruct |
-| C | Llama × {HF, vLLM, SGLang} × {baseline, KIVI, SnapKV, FIER, StreamingLLM}；Falcon3-Mamba（HF 原生） |
+| C | Llama × {HF, vLLM}；Falcon3-Mamba（HF 原生） |
 
 ## 当前范围总结
 

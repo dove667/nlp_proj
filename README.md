@@ -10,72 +10,42 @@
 - `src/exp_a/`：Exp A，RULER NIAH retrieval
 - `src/exp_b/`：Exp B，拆分为 RULER reasoning（长度扩展推理）与 LongBench（原始样本真实任务）
 - `src/exp_c/`：Exp C，serving 性能测试（TTFT、TPOT、throughput、peak memory）
-- `src/models/`：模型与方法实现
 - `src/data/`：RULER 数据准备说明
+- `src/utils.py`：共享 I/O 与模型工具函数
 - `results/`：实验输出目录
 - `report/`：LaTeX 报告
 
 ## 环境依赖
 
-当前在服务器上验证通过的实验环境是：
+实验环境：Python 3.11 / PyTorch 2.5.1+cu121 / Transformers 4.49.0，由 micromamba env `nlp_proj` 管理。
 
-- Python `3.11`
-- PyTorch `2.5.1+cu121`
-- Transformers `4.49.0`
-- Accelerate `1.13.0`
-- Triton `3.1.0`
-
-仓库现在提供了一个基于 `uv` 的 [`pyproject.toml`](pyproject.toml)。推荐工作流如下：
+[`pyproject.toml`](pyproject.toml) 是依赖清单，配合 `uv pip install` 安装：
 
 ```bash
-cd /data1/zsh/nlp_proj
-conda create -n nlp_proj python=3.11 -y
-conda activate nlp_proj
-pip install uv
-uv sync
+micromamba activate nlp_proj
+uv pip install matplotlib pandas vllm  # 按需补充
 ```
 
-说明：
+`torch` 固定到 `cu121` 源，避免解析到不兼容的 CUDA 版本。
 
-- `torch` / `torchvision` / `torchaudio` 已固定到 `cu121` 源，避免解析时误切到不兼容的 CUDA 版本。
-- `Falcon3-Mamba-7B-Instruct` 在 `transformers` 中可以直接推理，不强依赖 `mamba-ssm`。
+`Falcon3-Mamba-7B-Instruct` 在 `transformers` 中可以直接推理，不强依赖 `mamba-ssm`。常见稳定配置：单卡、`bf16`、`--device_map none`，不要用 `device_map="auto"`。32K 单卡 OOM，正式结果不包含 Mamba 32K。
 
-如果要做 Mamba kernel / efficiency 相关实验，可以额外安装可选依赖：
+### Mamba kernel（可选）
 
-```bash
-cd /data1/zsh/nlp_proj
-CUDA_HOME=/usr/local/cuda MAX_JOBS=8 uv sync --extra mamba-kernels
-```
-
-注意：
-
-- `causal-conv1d` 已放进可选 extra。
-- `mamba-ssm` 暂时没有放进基础依赖里，因为它和当前 `torch/triton` 组合仍需要单独验证。
-- 对于 `Falcon3-Mamba-7B-Instruct`，常见稳定配置是单卡、`bf16/fp16`、不要使用 `device_map="auto"`。
-- 在当前服务器（24GB RTX 4090）上，`Falcon3-Mamba-7B-Instruct` 的 `RULER NIAH` 实验稳定测到 16K；32K 单卡会 OOM，而多卡 `device_map=auto` 在 Mamba CUDA kernel 路径上存在稳定性问题，因此正式结果不包含 Mamba 32K。
-
-当前在上已经验证通过的 Mamba kernel 组合是：
+如需安装 `mamba-ssm`，用本地 wheel 避免网络问题。已验证的组合：
 
 - `torch==2.5.1+cu121`
 - `causal-conv1d==1.6.2.post1`
-- `mamba-ssm==2.2.4+cu12torch2.5cxx11abifalse`
+- `mamba-ssm==2.2.4`
 
-对于 `mamba-ssm`，更推荐使用“本地下载 wheel，再上传到服务器安装”的方式，尤其是在服务器网络不稳定、GitHub 下载慢、或者 wheel 体积较大时。当前可用 wheel 约 `300MB`，直接在服务器端拉取通常更慢。
-
-推荐流程：
-
-1. 在本地下载与服务器环境匹配的 wheel。
-2. 上传到到服务器，例如放到仓库根目录。
-3. 在目标环境中执行本地 wheel 安装。
-
-示例命令：
+安装：
 
 ```bash
-cd /data1/zsh/nlp_proj
+micromamba activate nlp_proj
 uv pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 ```
 
-安装后可用下面的命令验证：
+验证：
 
 ```bash
 python - <<'PY'

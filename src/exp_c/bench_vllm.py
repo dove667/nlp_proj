@@ -1,17 +1,6 @@
-#!/usr/bin/env python3
-"""
-Exp C — vLLM backend benchmark (Llama only).
-
-Measures TTFT, TPOT, throughput, and peak GPU memory using vLLM 0.7.x.
-TTFT and TPOT are derived from RequestMetrics.first_token_time /
-arrival_time / finished_time provided by vLLM's scheduler.
-
-Usage:
-    python bench_vllm.py --context_lens 4096 8192 --batch_sizes 1 4
-"""
-
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -20,6 +9,9 @@ import torch
 import torch.distributed as dist
 from vllm import LLM, SamplingParams
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import append_jsonl
+
 MODEL_PATH = "/data1/zsh/models/Llama-3.1-8B-Instruct"
 MODEL_NAME = "llama31"
 
@@ -27,11 +19,10 @@ CONTEXT_LENS = [4096, 8192, 16384, 32768]
 BATCH_SIZES = [1, 4, 8, 16]
 OUTPUT_LEN = 128
 
-# Dummy text used to fill prompts to the target token length.
 _FILL_UNIT = "The quick brown fox jumps over the lazy dog. "
 
 
-def make_prompt_text(llm: LLM, target_len: int) -> str:
+def _make_prompt_text(llm: LLM, target_len: int) -> str:
     tokenizer = llm.get_tokenizer()
     unit_ids = tokenizer.encode(_FILL_UNIT, add_special_tokens=False)
     token_ids: list[int] = []
@@ -49,7 +40,7 @@ def bench_one(
     n_warmup: int,
     n_runs: int,
 ) -> dict[str, Any]:
-    prompt = make_prompt_text(llm, context_len)
+    prompt = _make_prompt_text(llm, context_len)
     prompts = [prompt] * batch_size
 
     sampling_params = SamplingParams(
@@ -59,7 +50,6 @@ def bench_one(
     )
     warmup_params = SamplingParams(max_tokens=1, temperature=0)
 
-    # Warmup
     for _ in range(n_warmup):
         llm.generate([prompt], warmup_params, use_tqdm=False)
 
@@ -73,7 +63,6 @@ def bench_one(
         outputs = llm.generate(prompts, sampling_params, use_tqdm=False)
         t_wall_end = time.perf_counter()
 
-        # Per-request metrics from vLLM scheduler
         ttft_vals: list[float] = []
         tpot_vals: list[float] = []
         total_output_tokens = 0
@@ -112,13 +101,7 @@ def bench_one(
     }
 
 
-def append_jsonl(path: Path, row: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--context_lens", type=int, nargs="+", default=CONTEXT_LENS)
     parser.add_argument("--batch_sizes", type=int, nargs="+", default=BATCH_SIZES)
@@ -131,11 +114,14 @@ def main() -> None:
         type=Path,
         default=Path(__file__).parents[2] / "results" / "exp_c",
     )
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
 
     out_path = args.out_dir / "llama31_vllm.jsonl"
 
-    # max_model_len must cover context + output
     max_model_len = max(args.context_lens) + args.output_len
 
     print(f"Loading {MODEL_NAME} with vLLM (max_model_len={max_model_len}) ...")
@@ -164,7 +150,7 @@ def main() -> None:
                     n_warmup=args.n_warmup,
                     n_runs=args.n_runs,
                 )
-                append_jsonl(out_path, row)
+                append_jsonl(out_path, [row])
                 print(
                     f"  ttft={row['ttft_ms']:.1f}ms  tpot={row['tpot_ms']:.2f}ms  "
                     f"tput={row['throughput_tokens_per_s']:.1f}tok/s  "

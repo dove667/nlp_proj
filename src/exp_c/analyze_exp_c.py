@@ -1,25 +1,13 @@
-#!/usr/bin/env python3
-"""
-Exp C — analysis and plotting.
-
-Reads all JSONL result files from results/exp_c/ and generates the three
-core figures defined in experiments.md:
-
-  1. TTFT vs context length  (Llama backends + Mamba, batch size = 1)
-  2. Peak memory vs context length  (Llama backends + Mamba, batch size = 1)
-  3. Throughput vs batch size  (Llama backends, ctx = 8K)
-
-Usage:
-    python src/exp_c/analyze_exp_c.py
-    python src/exp_c/analyze_exp_c.py --results_dir /path/to/results/exp_c --out_dir /path/to/out
-"""
-
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import read_jsonl
 
 RESULTS_DIR = Path(__file__).parents[2] / "results" / "exp_c"
 
@@ -56,11 +44,7 @@ EDGE     = "#CBBEAD"
 def load_results(results_dir: Path) -> pd.DataFrame:
     rows = []
     for p in sorted(results_dir.glob("*.jsonl")):
-        with p.open() as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    rows.append(json.loads(line))
+        rows.extend(read_jsonl(p))
     if not rows:
         raise FileNotFoundError(f"No JSONL files found in {results_dir}")
     return pd.DataFrame(rows)
@@ -197,12 +181,16 @@ def print_summary(df: pd.DataFrame) -> None:
     print(df[available].to_string(index=False, float_format="{:.2f}".format))
 
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--results_dir", type=Path, default=RESULTS_DIR)
     parser.add_argument("--out_dir", type=Path, default=None,
                         help="Output directory. Defaults to --results_dir.")
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
 
     out_dir = args.out_dir if args.out_dir is not None else args.results_dir
     out_dir.mkdir(parents=True, exist_ok=True)

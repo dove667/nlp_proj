@@ -116,6 +116,34 @@ def plot_ttft_vs_context(df: pd.DataFrame, out_dir: Path) -> None:
     print(f"Saved {out}")
 
 
+def plot_tpot_vs_context(df: pd.DataFrame, out_dir: Path) -> None:
+    fig, ax = _make_figure(
+        "TPOT vs Context Length",
+        "Time per output token at batch size = 1  ·  lower is better",
+    )
+    sub = df[df["batch_size"] == 1].copy()
+    for (model, backend), grp in sub.groupby(["model", "backend"]):
+        grp = grp.sort_values("context_len")
+        if grp["tpot_ms"].isna().all():
+            continue
+        ax.plot(
+            grp["context_len"] / 1024,
+            grp["tpot_ms"],
+            label=_series_label(model, backend),
+            color=_color(model, backend),
+            marker=_marker(model, backend),
+            linewidth=2.4,
+            markersize=7,
+        )
+    ax.set_xlabel("Context length (K tokens)", fontsize=12, color=TEXT)
+    ax.set_ylabel("TPOT (ms/token)", fontsize=12, color=TEXT)
+    _finalize_legend(ax)
+    out = out_dir / "fig4_tpot_vs_context.pdf"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out}")
+
+
 def plot_memory_vs_context(df: pd.DataFrame, out_dir: Path) -> None:
     fig, ax = _make_figure(
         "Peak GPU Memory vs Context Length",
@@ -207,6 +235,7 @@ def main() -> None:
     print_summary(df)
 
     plot_ttft_vs_context(df, out_dir)
+    plot_tpot_vs_context(df, out_dir)
     plot_memory_vs_context(df, out_dir)
     plot_throughput_vs_batch(df, out_dir)
 

@@ -1,4 +1,4 @@
-name: nlp_proj
+name: nlp
 channels:
   - pytorch
   - nvidia

@@ -1,4 +1,4 @@
-name: nlp_proj_vllm
+name: vllm
 channels:
   - pytorch
   - nvidia

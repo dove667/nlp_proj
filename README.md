@@ -22,18 +22,39 @@ Topic: **What Determines Long-Context Ability in LLMs? A Survey with Experimenta
 
 Experiment environment: Python 3.11 / PyTorch 2.5.1+cu121 / Transformers 4.49.0.
 
+Use `micromamba` / `conda` for the binary-sensitive runtime base: Python, PyTorch, CUDA, Triton.  
+Use `uv pip` for upper-layer Python dependencies from [`pyproject.toml`](pyproject.toml).
+
+Main environment:
+
 ```bash
 micromamba env create -f environment.yml
-micromamba activate nlp_proj
+micromamba activate nlp
 uv lock
 uv export --frozen --no-dev --format requirements.txt --prune torch --output-file .uv-requirements.txt
 uv pip install --python "$CONDA_PREFIX/bin/python" -r .uv-requirements.txt
 ```
 
+Separate `vllm` environment (`cu121`):
+
 ```bash
 micromamba env create -f environment.vllm.yml
-micromamba activate nlp_proj_vllm
+micromamba activate vllm
 uv pip install --python "$CONDA_PREFIX/bin/python" vllm==0.7.3
+```
+
+Optional Mamba kernels:
+
+```bash
+micromamba activate nlp
+CUDA_HOME=/usr/local/cuda MAX_JOBS=8 pip install --no-deps --no-build-isolation "causal-conv1d>=1.4.0"
+```
+
+`mamba-ssm` local wheel:
+
+```bash
+micromamba activate nlp
+pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 ```
 
 ## Experiments
@@ -76,18 +97,38 @@ See [experiment design doc](docs/experiments.md) for details.
 
 实验环境：Python 3.11 / PyTorch 2.5.1+cu121 / Transformers 4.49.0。
 
+底层敏感运行时使用 `micromamba` / `conda` 管理：Python、PyTorch、CUDA、Triton。  
+上层 Python 依赖使用 `uv pip` 配合 [`pyproject.toml`](pyproject.toml) 管理。
+
+主环境：
+
 ```bash
 micromamba env create -f environment.yml
-micromamba activate nlp_proj
+micromamba activate nlp
 uv lock
 uv export --frozen --no-dev --format requirements.txt --prune torch --output-file .uv-requirements.txt
 uv pip install --python "$CONDA_PREFIX/bin/python" -r .uv-requirements.txt
 ```
 
+单独的 `vllm` 环境（`cu121`）：
+
 ```bash
 micromamba env create -f environment.vllm.yml
-micromamba activate nlp_proj_vllm
+micromamba activate vllm
 uv pip install --python "$CONDA_PREFIX/bin/python" vllm==0.7.3
+```
+
+可选 Mamba kernel：
+
+```bash
+micromamba activate nlp
+CUDA_HOME=/usr/local/cuda MAX_JOBS=8 pip install --no-deps --no-build-isolation "causal-conv1d>=1.4.0"
+```
+
+`mamba-ssm` 本地 wheel：
+
+```bash
+pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 ```
 
 ## 实验

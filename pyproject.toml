@@ -18,6 +18,7 @@ dependencies = [
   "tqdm==4.67.3",
   "transformers==4.49.0",
   "wonderwords==3.0.1",
+  "einops==0.8.2"
 ]
 
 # 仅保留纯 Python / 轻量依赖。

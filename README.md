@@ -57,6 +57,21 @@ micromamba activate nlp
 pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 ```
 
+Check installation:
+
+```bash
+python - <<'PY'
+import torch
+print("torch =", torch.__version__, "cuda =", torch.version.cuda)
+
+import causal_conv1d
+print("causal_conv1d ok")
+
+import mamba_ssm
+print("mamba_ssm ok")
+PY
+```
+
 ## Experiments
 
 - Data sources: `RULER + LongBench`
@@ -129,6 +144,21 @@ CUDA_HOME=/usr/local/cuda MAX_JOBS=8 pip install --no-deps --no-build-isolation 
 
 ```bash
 pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+```
+
+检查安装：
+
+```bash
+python - <<'PY'
+import torch
+print("torch =", torch.__version__, "cuda =", torch.version.cuda)
+
+import causal_conv1d
+print("causal_conv1d ok")
+
+import mamba_ssm
+print("mamba_ssm ok")
+PY
 ```
 
 ## 实验

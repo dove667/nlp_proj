@@ -1,0 +1,12 @@
+name: nlp_proj
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pytorch=2.5.1
+  - pytorch-cuda=12.1
+  - pytorch::torchtriton=3.1.0
+  - pip
+  - uv

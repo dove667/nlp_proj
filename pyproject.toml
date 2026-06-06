@@ -15,26 +15,14 @@ dependencies = [
   "safetensors==0.7.0",
   "sentencepiece==0.2.1",
   "tokenizers==0.21.4",
-  "torch==2.5.1+cu121",
   "tqdm==4.67.3",
   "transformers==4.49.0",
-  "triton==3.1.0",
-  "vllm==0.7.3",
   "wonderwords==3.0.1",
 ]
 
-[project.optional-dependencies]
-# 已验证可直接由 uv 同步的 Mamba 相关依赖。
-# mamba-ssm 不直接写在这里，因为当前推荐通过本地 wheel 安装，
-# 避免在服务器网络不佳时触发大文件下载或源码构建。
-mamba-kernels = [
-  "causal-conv1d==1.6.2.post1",
-]
+# 仅保留纯 Python / 轻量依赖。
+# PyTorch / CUDA / Triton / vLLM / mamba 相关二进制依赖统一交给
+# micromamba / conda 管理，避免 uv 误改底层运行时。
 
-[[tool.uv.index]]
-name = "pytorch-cu121"
-url = "https://download.pytorch.org/whl/cu121"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cu121" }
+[tool.uv]
+package = false

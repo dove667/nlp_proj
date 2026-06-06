@@ -20,47 +20,20 @@ Topic: **What Determines Long-Context Ability in LLMs? A Survey with Experimenta
 
 ## Environment
 
-Experiment environment: Python 3.11 / PyTorch 2.5.1+cu121 / Transformers 4.49.0, managed by a micromamba env `nlp_proj`.
-
-[`pyproject.toml`](pyproject.toml) is the dependency manifest, installed with `uv pip install`:
+Experiment environment: Python 3.11 / PyTorch 2.5.1+cu121 / Transformers 4.49.0.
 
 ```bash
+micromamba env create -f environment.yml
 micromamba activate nlp_proj
-uv pip install matplotlib pandas vllm  # add as needed
+uv lock
+uv export --frozen --no-dev --format requirements.txt --prune torch --output-file .uv-requirements.txt
+uv pip install --python "$CONDA_PREFIX/bin/python" -r .uv-requirements.txt
 ```
 
-`torch` is pinned to the `cu121` index to avoid resolving to an incompatible CUDA version.
-
-`Falcon3-Mamba-7B-Instruct` runs directly with `transformers` — `mamba-ssm` is not a hard dependency. Stable config: single GPU, `bf16`, `--device_map none`. Do **not** use `device_map="auto"`. 32K OOMs on a single GPU; official results exclude Mamba 32K.
-
-### Mamba kernel (optional)
-
-If you need `mamba-ssm`, install from the local wheel to avoid network issues. Verified combination:
-
-- `torch==2.5.1+cu121`
-- `causal-conv1d==1.6.2.post1`
-- `mamba-ssm==2.2.4`
-
-Install:
-
 ```bash
-micromamba activate nlp_proj
-uv pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
-```
-
-Verify:
-
-```bash
-python - <<'PY'
-import torch
-print("torch =", torch.__version__, "cuda =", torch.version.cuda)
-
-import causal_conv1d
-print("causal_conv1d ok")
-
-import mamba_ssm
-print("mamba_ssm ok")
-PY
+micromamba env create -f environment.vllm.yml
+micromamba activate nlp_proj_vllm
+uv pip install --python "$CONDA_PREFIX/bin/python" vllm==0.7.3
 ```
 
 ## Experiments
@@ -101,47 +74,20 @@ See [experiment design doc](docs/experiments.md) for details.
 
 ## 环境依赖
 
-实验环境：Python 3.11 / PyTorch 2.5.1+cu121 / Transformers 4.49.0，由 micromamba env `nlp_proj` 管理。
-
-[`pyproject.toml`](pyproject.toml) 是依赖清单，配合 `uv pip install` 安装：
+实验环境：Python 3.11 / PyTorch 2.5.1+cu121 / Transformers 4.49.0。
 
 ```bash
+micromamba env create -f environment.yml
 micromamba activate nlp_proj
-uv pip install matplotlib pandas vllm  # 按需补充
+uv lock
+uv export --frozen --no-dev --format requirements.txt --prune torch --output-file .uv-requirements.txt
+uv pip install --python "$CONDA_PREFIX/bin/python" -r .uv-requirements.txt
 ```
 
-`torch` 固定到 `cu121` 源，避免解析到不兼容的 CUDA 版本。
-
-`Falcon3-Mamba-7B-Instruct` 在 `transformers` 中可以直接推理，不强依赖 `mamba-ssm`。常见稳定配置：单卡、`bf16`、`--device_map none`，不要用 `device_map="auto"`。32K 单卡 OOM，正式结果不包含 Mamba 32K。
-
-### Mamba kernel（可选）
-
-如需安装 `mamba-ssm`，用本地 wheel 避免网络问题。已验证的组合：
-
-- `torch==2.5.1+cu121`
-- `causal-conv1d==1.6.2.post1`
-- `mamba-ssm==2.2.4`
-
-安装：
-
 ```bash
-micromamba activate nlp_proj
-uv pip install --no-deps ./mamba_ssm-2.2.4+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
-```
-
-验证：
-
-```bash
-python - <<'PY'
-import torch
-print("torch =", torch.__version__, "cuda =", torch.version.cuda)
-
-import causal_conv1d
-print("causal_conv1d ok")
-
-import mamba_ssm
-print("mamba_ssm ok")
-PY
+micromamba env create -f environment.vllm.yml
+micromamba activate nlp_proj_vllm
+uv pip install --python "$CONDA_PREFIX/bin/python" vllm==0.7.3
 ```
 
 ## 实验

@@ -13,6 +13,8 @@ __pycache__/
 .venv
 env/
 venv/
+.uv-requirements.txt
+.uv-cache/
 
 # Data / model artifacts
 datasets/

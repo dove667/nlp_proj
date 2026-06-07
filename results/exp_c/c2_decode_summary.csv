@@ -1,0 +1,7 @@
+experiment,model,backend,prompt_type,prompt_len,target_prompt_len,batch_size,output_len,avg_actual_output_len,ttft_ms,tpot_ms
+decode_hf,llama31,hf,continuation,240,256,1,256,256.0,,28.226338000663745
+decode_hf,llama31,hf,continuation,240,256,1,512,512.0,,28.122541251053473
+decode_hf,llama31,hf,continuation,240,256,1,1024,1024.0,,28.12922915304793
+decode_hf,mamba,hf,continuation,241,256,1,256,256.0,,73.26724172807208
+decode_hf,mamba,hf,continuation,241,256,1,512,512.0,,73.4401506493907
+decode_hf,mamba,hf,continuation,241,256,1,1024,1024.0,,73.4185145966983

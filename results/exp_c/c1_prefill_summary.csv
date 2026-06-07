@@ -1,0 +1,7 @@
+experiment,model,backend,context_len,batch_size,output_len,ttft_ms,peak_memory_gb
+prefill_hf,llama31,hf,4096,1,1,433.23379444579285,17.094749184
+prefill_hf,llama31,hf,8192,1,1,946.3635738939047,18.12045312
+prefill_hf,llama31,hf,16384,1,1,2096.6074308380485,20.171860992
+prefill_hf,mamba,hf,4096,1,1,556.93753156811,16.39112192
+prefill_hf,mamba,hf,8192,1,1,1112.165192142129,18.15862784
+prefill_hf,mamba,hf,16384,1,1,2255.4601949329176,21.758127104

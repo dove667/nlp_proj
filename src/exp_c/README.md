@@ -13,8 +13,10 @@
 - `bench_decode_hf.py`
   - C2 decode 特性
   - `Llama HF vs Mamba HF`
-  - `short prompt + long generation`，`bs=1`
+  - `continuation prompt + long generation`，`bs=1`
   - 指标：`TPOT`
+  - 默认 `prompt_len=256`、`output_len=1024`
+  - 可选 `--output_lens 256 512 1024` 做小 ablation
 
 - `bench_backend_llama.py`
   - C3 服务可用性/调度对比
@@ -38,6 +40,13 @@ python src/exp_c/bench_backend_llama.py
 python src/exp_c/analyze_exp_c.py
 ```
 
+C2 小 ablation 示例：
+
+```bash
+python src/exp_c/bench_decode_hf.py --output_lens 256 512 1024
+python src/exp_c/analyze_exp_c.py
+```
+
 ## 输出文件
 
 - `results/exp_c/prefill_hf.jsonl`
@@ -49,6 +58,7 @@ python src/exp_c/analyze_exp_c.py
 - `c1_prefill_ttft_vs_context.pdf`
 - `c1_prefill_memory_vs_context.pdf`
 - `c2_decode_tpot_compare.pdf`
+- `c2_decode_tpot_vs_output_len.pdf`（仅在多 `output_len` 时生成）
 - `c3_backend_llama_requests_vs_batch_8k.pdf`
 - `c3_backend_llama_requests_vs_batch_16k.pdf`
 - `c3_backend_llama_hf_capacity_summary.csv`

@@ -112,22 +112,45 @@ def plot_prefill(df: pd.DataFrame, out_dir: Path) -> None:
 def plot_decode(df: pd.DataFrame, out_dir: Path) -> None:
     if df.empty:
         return
-    fig, ax = make_fig("Exp C2 Decode TPOT", "HF-only, short prompt + long generation, bs=1", figsize=(7.2, 5.2))
-    order = ["llama31", "mamba"]
-    sub = df.drop_duplicates(subset=["model"]).copy()
-    sub["model"] = pd.Categorical(sub["model"], categories=order, ordered=True)
-    sub = sub.sort_values("model").dropna(subset=["model"])
-    ax.bar(
-        [LABELS[(model_name, "hf")].replace(" — HF", "") for model_name in sub["model"]],
-        sub["tpot_ms"],
-        color=[COLORS[(m, "hf")] for m in sub["model"]],
-        edgecolor=EDGE,
-        width=0.6,
-    )
-    ax.set_ylabel("TPOT (ms/token)", color=TEXT)
-    fig.savefig(out_dir / "c2_decode_tpot_compare.pdf", bbox_inches="tight")
-    plt.close(fig)
-    df.sort_values(["model"]).to_csv(out_dir / "c2_decode_summary.csv", index=False)
+    unique_output_lens = sorted(df["output_len"].dropna().unique())
+    if len(unique_output_lens) <= 1:
+        fig, ax = make_fig("Exp C2 Decode TPOT", "HF-only, continuation prompt, bs=1", figsize=(7.2, 5.2))
+        order = ["llama31", "mamba"]
+        sub = df.drop_duplicates(subset=["model"]).copy()
+        sub["model"] = pd.Categorical(sub["model"], categories=order, ordered=True)
+        sub = sub.sort_values("model").dropna(subset=["model"])
+        ax.bar(
+            [LABELS[(model_name, "hf")].replace(" — HF", "") for model_name in sub["model"]],
+            sub["tpot_ms"],
+            color=[COLORS[(m, "hf")] for m in sub["model"]],
+            edgecolor=EDGE,
+            width=0.6,
+        )
+        ax.set_ylabel("TPOT (ms/token)", color=TEXT)
+        fig.savefig(out_dir / "c2_decode_tpot_compare.pdf", bbox_inches="tight")
+        plt.close(fig)
+    else:
+        fig, ax = make_fig(
+            "Exp C2 Decode TPOT Ablation",
+            "HF-only, continuation prompt, bs=1, vary output length",
+        )
+        for key, group in df.groupby(["model", "backend"]):
+            group = group.sort_values("output_len")
+            ax.plot(
+                group["output_len"],
+                group["tpot_ms"],
+                label=LABELS[key],
+                color=COLORS[key],
+                marker=MARKERS[key],
+                linewidth=2.4,
+                markersize=7,
+            )
+        ax.set_xlabel("Output length (tokens)", color=TEXT)
+        ax.set_ylabel("TPOT (ms/token)", color=TEXT)
+        add_legend(ax)
+        fig.savefig(out_dir / "c2_decode_tpot_vs_output_len.pdf", bbox_inches="tight")
+        plt.close(fig)
+    df.sort_values(["model", "output_len"]).to_csv(out_dir / "c2_decode_summary.csv", index=False)
 
 
 def plot_backend(df: pd.DataFrame, out_dir: Path) -> None:

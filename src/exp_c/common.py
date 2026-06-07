@@ -22,8 +22,14 @@ PREFILL_CONTEXT_LENS = [4096, 8192, 16384]
 CAPACITY_CONTEXT_LENS = [8192, 16384]
 CAPACITY_BATCH_SIZES = [1, 2, 4, 8, 16]
 DECODE_PROMPT_LEN = 256
-DECODE_OUTPUT_LEN = 512
+DECODE_OUTPUT_LEN = 1024
 FILL_TEXT = "The quick brown fox jumps over the lazy dog. "
+CONTINUATION_PREFIX = (
+    "Continue the text coherently and directly. "
+    "Do not explain what you are doing.\n\n"
+    "Prefix:\n"
+)
+CONTINUATION_SUFFIX = "\n\nContinue:\n"
 
 
 def ensure_offline_env() -> None:
@@ -74,6 +80,31 @@ def make_batch_tensors(tokenizer: Any, context_len: int, batch_size: int, device
     input_ids = torch.tensor([token_ids] * batch_size, device=device)
     attention_mask = torch.ones_like(input_ids)
     return input_ids, attention_mask
+
+
+def make_prompt_tensors(tokenizer: Any, prompt_text: str, batch_size: int, device: str) -> tuple[torch.Tensor, torch.Tensor]:
+    encoded = tokenizer(prompt_text, return_tensors="pt", add_special_tokens=False)
+    input_ids = encoded["input_ids"].to(device).repeat(batch_size, 1)
+    attention_mask = encoded.get("attention_mask")
+    if attention_mask is None:
+        attention_mask = torch.ones_like(input_ids)
+    else:
+        attention_mask = attention_mask.to(device).repeat(batch_size, 1)
+    return input_ids, attention_mask
+
+
+def make_continuation_prompt(tokenizer: Any, target_prompt_len: int) -> str:
+    prefix_ids = tokenizer.encode(CONTINUATION_PREFIX, add_special_tokens=False)
+    suffix_ids = tokenizer.encode(CONTINUATION_SUFFIX, add_special_tokens=False)
+    available = max(target_prompt_len - len(prefix_ids) - len(suffix_ids), 1)
+    filler_ids = make_fill_ids(tokenizer, available)
+    prompt_ids = prefix_ids + filler_ids + suffix_ids
+    if len(prompt_ids) > target_prompt_len:
+        prompt_ids = prompt_ids[:target_prompt_len]
+    elif len(prompt_ids) < target_prompt_len:
+        pad_fill = make_fill_ids(tokenizer, target_prompt_len - len(prompt_ids))
+        prompt_ids.extend(pad_fill)
+    return tokenizer.decode(prompt_ids, skip_special_tokens=True)
 
 
 def sync_cuda(device: str) -> None:

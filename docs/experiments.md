@@ -80,7 +80,7 @@
 | Serving backend（仅 Llama） | HuggingFace Transformers / vLLM |
 | Context length | `C1` 为 4K、8K、16K；`C3` 为 8K、16K |
 | Batch size | `C1/C2` 固定 1；`C3` 扫 batch |
-| Output length | `C1` 用 1 token；`C2/C3` 用固定长输出 |
+| Output length | `C1` 用 1 token；`C2` 默认 1024，可做小 ablation；`C3` 用固定长输出 |
 
 **实现脚本**：
 1. `bench_prefill_hf.py`：Llama HF vs Mamba HF，测 `TTFT + peak memory`

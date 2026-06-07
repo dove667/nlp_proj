@@ -4,7 +4,7 @@
 
 1. 用 [gen_pred_ruler.py](gen_pred_ruler.py) 生成 `pred.jsonl`
 2. 用 [analyze_ruler_predictions.py](analyze_ruler_predictions.py) 做全局评估和位置敏感性分析
-3. 用 [plot_position_sensitivity.py](plot_position_sensitivity.py) 生成折线图和热力图
+3. 用 [plot_position_sensitivity.py](plot_position_sensitivity.py) 生成热力图
 
 任务：
 
@@ -47,7 +47,7 @@
 CUDA_VISIBLE_DEVICES=1,2 python src/exp_a/gen_pred_ruler.py \
   --model_path /data1/zsh/models/Llama-3.1-8B-Instruct \
   --data_root /data1/zsh/datasets/ruler/Llama31_8B_Instruct \
-  --out_root /data1/zsh/nlp_proj/results/exp_a/llama31 \
+  --out_root results/exp_a/llama31 \
   --lengths 4096 8192 16384 32768 \
   --tasks niah_single_1 niah_multikey_1 \
   --max_new_tokens 128 \
@@ -59,7 +59,7 @@ CUDA_VISIBLE_DEVICES=1,2 python src/exp_a/gen_pred_ruler.py \
 CUDA_VISIBLE_DEVICES=1 python src/exp_a/gen_pred_ruler.py \
   --model_path /data1/zsh/models/Falcon3-Mamba-7B-Instruct \
   --data_root /data1/zsh/datasets/ruler/niah/Falcon3-Mamba-7B-Instruct \
-  --out_root /data1/zsh/nlp_proj/results/exp_a/mamba \
+  --out_root results/exp_a/mamba \
   --lengths 4096 8192 16384 32768 \
   --tasks niah_single_1 niah_multikey_1 \
   --max_new_tokens 128 \
@@ -103,35 +103,25 @@ python src/exp_a/analyze_ruler_predictions.py \
 
 ## Step 3: 可视化
 
-使用 [plot_position_sensitivity.py](plot_position_sensitivity.py) 生成位置敏感性可视化图。
+使用 [plot_position_sensitivity.py](plot_position_sensitivity.py) 生成位置敏感性热力图。
 
 ```bash
 python src/exp_a/plot_position_sensitivity.py \
-  --summary_csv /data1/zsh/nlp_proj/results/exp_a/llama31/summary.csv \
-  --position_csv /data1/zsh/nlp_proj/results/exp_a/llama31/position_sensitivity_10bins.csv \
-  --output_prefix /data1/zsh/nlp_proj/results/exp_a/llama31/position_sensitivity_llama31 \
-  --title "Llama-3.1-8B-Instruct on RULER NIAH"
-
-python src/exp_a/plot_position_sensitivity.py \
-  --summary_csv /data1/zsh/nlp_proj/results/exp_a/mamba/summary.csv \
-  --position_csv /data1/zsh/nlp_proj/results/exp_a/mamba/position_sensitivity_10bins.csv \
-  --output_prefix /data1/zsh/nlp_proj/results/exp_a/mamba/position_sensitivity_mamba \
-  --title "Falcon3-Mamba-7B-Instruct on RULER NIAH"
+  --position_csv results/exp_a/llama31/position_sensitivity_10bins.csv results/exp_a/mamba/position_sensitivity_10bins.csv \
+  --model_labels "Llama-3.1-8B-Instruct" "Falcon3-Mamba-7B-Instruct" \
+  --output_prefix results/exp_a/position_sensitivity_models
 ```
 
 输出文件：
 
-- `*_line.png`：折线图，适合看不同上下文长度在不同位置桶上的趋势变化
-- `*_heatmap.png`：热力图，适合快速定位少数掉点的长度和位置区间
+- `*_heatmap.pdf`：合并热力图，适合论文插图和模型间对比
 
-当前 `llama31` 的默认输出示例：
+当前默认输出示例：
 
-- `results/exp_a/llama31/position_sensitivity_llama31_line.png`
-- `results/exp_a/llama31/position_sensitivity_llama31_heatmap.png`
+- `results/exp_a/position_sensitivity_models_heatmap.pdf`
 
 建议：
 
-- 如果整体分数接近满分，优先看热力图，更容易发现稀疏的低分 bucket
-- 如果需要比较不同长度随位置变化的走势，再看折线图
-- 如果后续补齐 `mamba`结果，直接替换 `summary_csv`、`position_csv` 和 `output_prefix` 即可复用同一脚本
-
+- 如果整体分数接近满分，热力图比折线更容易发现稀疏的低分 bucket
+- 合并图默认共享色条，更适合直接放进报告或论文
+- 如果后续补充更多模型，继续在命令里追加 `--position_csv` 和 `--model_labels` 即可

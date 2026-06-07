@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
 
@@ -13,24 +12,31 @@ TASK_LABELS = {
     "niah_multikey_1": "NIAH Multi-Key",
 }
 LENGTH_ORDER = [4096, 8192, 16384, 32768]
-BG = "#F7F1E6"
-PANEL_BG = "#FBF8F2"
-GRID = "#D9D0C3"
-TEXT = "#2F241B"
-SUBTEXT = "#6C5B4D"
-EDGE = "#CBBEAD"
+BG = "#FFFFFF"
+PANEL_BG = "#FFFFFF"
+TEXT = "#222222"
+SUBTEXT = "#5A5A5A"
+EDGE = "#CFCFCF"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create heatmap figure for RULER NIAH position sensitivity."
+        description="Create heatmap figure(s) for RULER NIAH position sensitivity."
     )
-    parser.add_argument("--position_csv", required=True,
-                        help="Path to position_sensitivity_10bins.csv")
+    parser.add_argument(
+        "--position_csv",
+        required=True,
+        nargs="+",
+        help="One or more position_sensitivity_10bins.csv files",
+    )
     parser.add_argument("--output_prefix", required=True,
                         help="Output prefix, e.g. results/exp_a/llama31/position_sensitivity_llama31")
-    parser.add_argument("--title", default="Llama-3.1-8B-Instruct on RULER NIAH",
-                        help="Figure title prefix")
+    parser.add_argument(
+        "--model_labels",
+        nargs="*",
+        default=None,
+        help="Optional model labels aligned with --position_csv order",
+    )
     return parser.parse_args()
 
 
@@ -41,10 +47,23 @@ def _load_data(position_csv: str) -> pd.DataFrame:
     return pos_df
 
 
-def _make_heatmap_figure(pos_df: pd.DataFrame, title: str, output_prefix: Path) -> Path:
-    fig = plt.figure(figsize=(15.8, 5.2))
-    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 0.055], wspace=0.24)
-    axes = [fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])]
+def _resolve_model_labels(position_csvs: list[str], model_labels: list[str] | None) -> list[str]:
+    if model_labels is not None and len(model_labels) != len(position_csvs):
+        raise ValueError("--model_labels count must match --position_csv count")
+    if model_labels is not None:
+        return model_labels
+    return [Path(csv_path).parent.name for csv_path in position_csvs]
+
+
+def _make_heatmap_figure(
+    pos_dfs: list[pd.DataFrame],
+    model_labels: list[str],
+    output_prefix: Path,
+) -> Path:
+    n_models = len(pos_dfs)
+    fig_height = 3.0 * n_models + 1.8
+    fig = plt.figure(figsize=(12.6, fig_height))
+    gs = fig.add_gridspec(n_models, 3, width_ratios=[1, 1, 0.05], wspace=0.18, hspace=0.34)
     cax = fig.add_subplot(gs[0, 2])
     fig.patch.set_facecolor(BG)
 
@@ -53,50 +72,75 @@ def _make_heatmap_figure(pos_df: pd.DataFrame, title: str, output_prefix: Path) 
         ["#FFF7E8", "#F6D28B", "#E89A5B", "#B65434", "#7D3527"],
     )
 
-    lengths_present = sorted(pos_df["length"].unique())
-    vmin = min(97.0, float(pos_df["score"].min()))
+    lengths_present = sorted(
+        {
+            int(length)
+            for pos_df in pos_dfs
+            for length in pos_df["length"].unique()
+            if int(length) in LENGTH_ORDER
+        }
+    )
+    if not lengths_present:
+        lengths_present = LENGTH_ORDER
+
+    vmin = min(97.0, min(float(pos_df["score"].min()) for pos_df in pos_dfs))
     vmax = 100.0
     image = None
 
-    for ax, task in zip(axes, TASK_ORDER):
-        task_df = pos_df[pos_df["task"] == task]
-        pivot = (
-            task_df.pivot(index="length", columns="bucket_id", values="score")
-            .reindex(index=lengths_present)
-        )
-        image = ax.imshow(pivot.to_numpy(), cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
-        ax.set_facecolor(PANEL_BG)
-        ax.set_title(f"{TASK_LABELS[task]} Heatmap", fontsize=18, fontweight="bold", color=TEXT, pad=10)
-        ax.set_xticks(range(len(pivot.columns)))
-        ax.set_xticklabels([f"{i * 10}-{(i + 1) * 10}%" for i in pivot.columns], rotation=28, ha="right")
-        ax.set_yticks(range(len(pivot.index)))
-        ax.set_yticklabels([f"{idx:,}" for idx in pivot.index])
-        ax.tick_params(colors=TEXT, labelsize=11)
-        ax.set_xlabel("Position Bucket", fontsize=12, color=TEXT)
-        ax.set_ylabel("Context Length", fontsize=12, color=TEXT)
-        for spine in ax.spines.values():
-            spine.set_color(EDGE)
+    for row_idx, (pos_df, model_label) in enumerate(zip(pos_dfs, model_labels)):
+        row_axes = [fig.add_subplot(gs[row_idx, 0]), fig.add_subplot(gs[row_idx, 1])]
+        if row_idx > 0:
+            cax.remove()
+            cax = fig.add_subplot(gs[:, 2])
 
-        for row_idx in range(pivot.shape[0]):
-            for col_idx in range(pivot.shape[1]):
-                value = float(pivot.iat[row_idx, col_idx])
-                ax.text(
-                    col_idx, row_idx, f"{value:.1f}",
-                    ha="center", va="center", fontsize=10.5, color=TEXT,
-                    fontweight="bold" if value < 99.95 else "normal",
-                )
+        for col_idx, (ax, task) in enumerate(zip(row_axes, TASK_ORDER)):
+            task_df = pos_df[pos_df["task"] == task]
+            pivot = (
+                task_df.pivot(index="length", columns="bucket_id", values="score")
+                .reindex(index=lengths_present)
+                .reindex(columns=list(range(10)))
+            )
+            image = ax.imshow(pivot.to_numpy(), cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
+            ax.set_facecolor(PANEL_BG)
+            ax.set_xticks(range(len(pivot.columns)))
+            ax.set_xticklabels(
+                [f"{i * 10}-{(i + 1) * 10}%" for i in pivot.columns],
+                rotation=20,
+                ha="right",
+            )
+            ax.set_yticks(range(len(pivot.index)))
+            ax.set_yticklabels([f"{idx // 1024}K" for idx in pivot.index])
+            ax.tick_params(colors=TEXT, labelsize=9.5)
+            ax.set_xlabel("Position Bucket", fontsize=11, color=TEXT)
+            if col_idx == 0:
+                ax.set_ylabel(f"{model_label}\nContext Length", fontsize=11, color=TEXT)
+            else:
+                ax.set_ylabel("")
+            for spine in ax.spines.values():
+                spine.set_color(EDGE)
+
+            for y_idx in range(pivot.shape[0]):
+                for x_idx in range(pivot.shape[1]):
+                    value = pivot.iat[y_idx, x_idx]
+                    if pd.isna(value):
+                        continue
+                    numeric = float(value)
+                    ax.text(
+                        x_idx,
+                        y_idx,
+                        f"{numeric:.1f}",
+                        ha="center",
+                        va="center",
+                        fontsize=8.6,
+                        color=TEXT,
+                        fontweight="bold" if numeric < 99.95 else "normal",
+                    )
 
     cbar = fig.colorbar(image, cax=cax)
-    cbar.set_label("Bucket Accuracy (%)", fontsize=12, color=TEXT)
-    cbar.ax.tick_params(labelsize=10.5, colors=TEXT)
+    cbar.set_label("Accuracy (%)", fontsize=11, color=TEXT)
+    cbar.ax.tick_params(labelsize=9.5, colors=TEXT)
 
-    fig.suptitle(f"{title}: Heatmap View", fontsize=24, fontweight="bold", color=TEXT, y=0.97)
-    fig.text(
-        0.5, 0.89,
-        "Heatmap view makes the sparse low-score buckets immediately visible without line overlap.",
-        ha="center", fontsize=11.5, color=SUBTEXT,
-    )
-    fig.subplots_adjust(top=0.76, bottom=0.18, left=0.06, right=0.95)
+    fig.subplots_adjust(top=0.95, bottom=0.10, left=0.08, right=0.95)
 
     output_path = output_prefix.with_name(output_prefix.name + "_heatmap.pdf")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -107,7 +151,8 @@ def _make_heatmap_figure(pos_df: pd.DataFrame, title: str, output_prefix: Path) 
 
 def main() -> None:
     args = parse_args()
-    pos_df = _load_data(args.position_csv)
+    pos_dfs = [_load_data(path) for path in args.position_csv]
+    model_labels = _resolve_model_labels(args.position_csv, args.model_labels)
 
     plt.rcParams.update({
         "font.size": 11,
@@ -115,10 +160,13 @@ def main() -> None:
         "axes.labelsize": 12,
         "xtick.labelsize": 11,
         "ytick.labelsize": 11,
+        "savefig.facecolor": BG,
+        "figure.facecolor": BG,
+        "axes.facecolor": PANEL_BG,
     })
 
     output_prefix = Path(args.output_prefix)
-    heatmap_path = _make_heatmap_figure(pos_df, args.title, output_prefix)
+    heatmap_path = _make_heatmap_figure(pos_dfs, model_labels, output_prefix)
     print(f"Saved heatmap figure to: {heatmap_path}")
 
 

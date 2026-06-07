@@ -6,12 +6,12 @@ import pandas as pd
 
 from common import RESULTS_DIR, load_rows
 
-BG = "#F7F1E6"
-PANEL_BG = "#FBF8F2"
-GRID = "#D9D0C3"
-TEXT = "#2F241B"
-EDGE = "#CBBEAD"
-SUBTEXT = "#6C5B4D"
+BG = "#FFFFFF"
+PANEL_BG = "#FFFFFF"
+GRID = "#E2E2E2"
+TEXT = "#222222"
+EDGE = "#CFCFCF"
+SUBTEXT = "#5A5A5A"
 COLORS = {
     ("llama31", "hf"): "#4A90D9",
     ("mamba", "hf"): "#C44E52",

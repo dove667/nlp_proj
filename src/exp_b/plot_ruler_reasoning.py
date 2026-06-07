@@ -22,12 +22,12 @@ MODEL_STYLES = {
     "mamba": {"label": "Falcon3-Mamba-7B-Instruct", "linestyle": "--", "marker": "s"},
 }
 
-BG = "#F7F1E6"
-PANEL_BG = "#FBF8F2"
-GRID = "#D9D0C3"
-TEXT = "#2F241B"
-SUBTEXT = "#6C5B4D"
-EDGE = "#CBBEAD"
+BG = "#FFFFFF"
+PANEL_BG = "#FFFFFF"
+GRID = "#E2E2E2"
+TEXT = "#222222"
+SUBTEXT = "#5A5A5A"
+EDGE = "#CFCFCF"
 
 
 def parse_args() -> argparse.Namespace:

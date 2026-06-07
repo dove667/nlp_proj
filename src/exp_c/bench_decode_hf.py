@@ -1,4 +1,6 @@
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 from common import (
@@ -25,13 +27,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n_warmup", type=int, default=1)
     parser.add_argument("--n_runs", type=int, default=3)
     parser.add_argument("--out_dir", type=Path, default=RESULTS_DIR)
+    parser.add_argument("--_single_model", action="store_true")
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
+def run_single_model(args: argparse.Namespace) -> None:
     out_path = args.out_dir / "decode_hf.jsonl"
-
     for model_name in args.models:
         try:
             model, tokenizer = load_hf_model(model_name, args.device)
@@ -76,6 +77,36 @@ def main() -> None:
         unload_hf_model(model, tokenizer)
 
     print(f"Saved {out_path}")
+
+
+def main() -> None:
+    args = parse_args()
+    if args._single_model or len(args.models) == 1:
+        run_single_model(args)
+        return
+
+    for model_name in args.models:
+        cmd = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--models",
+            model_name,
+            "--prompt_len",
+            str(args.prompt_len),
+            "--output_len",
+            str(args.output_len),
+            "--device",
+            args.device,
+            "--n_warmup",
+            str(args.n_warmup),
+            "--n_runs",
+            str(args.n_runs),
+            "--out_dir",
+            str(args.out_dir),
+            "--_single_model",
+        ]
+        print(f"Launching subprocess for {model_name} ...", flush=True)
+        subprocess.run(cmd, check=True)
 
 
 if __name__ == "__main__":

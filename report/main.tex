@@ -227,11 +227,11 @@ The scoring rules are benchmark-specific. RULER retrieval and reasoning are eval
 \section{Experiments}
 \label{sec:experiments}
 
-We evaluate two representative architectures: the dense Transformer \texttt{Meta/Llama-3.1-8B-Instruct} and the state-space model \texttt{tiiuae/Falcon3-Mamba-7B-Instruct}. All runs use greedy decoding with bfloat16 precision on a single RTX 4090 GPU with 24\,GB memory. For Llama, HuggingFace runs use \texttt{device\_map=auto}; for Mamba, multi-device mapping was avoided because the relevant CUDA kernel path was not stable in the current environment. All experiments follow a long-input short-generation regime. In Experiment C, output length is fixed to 128 tokens so that the benchmark reflects serving costs for long-context understanding rather than prolonged decoding.
+We evaluate two representative architectures: the dense Transformer \texttt{Meta/Llama-3.1-8B-Instruct} and the state-space model \texttt{tiiuae/Falcon3-Mamba-7B-Instruct}. All runs use greedy decoding with bfloat16 precision on a single RTX 4090 GPU with 24\,GB memory. For Llama, HuggingFace runs use \texttt{device\_map=auto}; for Mamba, multi-device mapping was avoided because the relevant CUDA kernel path was not stable in the current environment. All experiments follow a long-input short-generation regime. In Experiment C, C1 measures \texttt{generate(max\_new\_tokens=1)} prefill behavior, C2 measures decode with a continuation prompt, and C3 measures backend throughput under fixed long-input generation. The purpose is to study serving costs for long-context understanding rather than long-history, long-output decoding.
 
 Several implementation details are important for interpretation. Each RULER result cell contains 500 examples. LongBench uses the project subset of 200 examples each for HotpotQA, Qasper, and GovReport, and 500 examples for RepoBench-P. For VT, we use an answer-only suffix that instructs the model to output only the final variable names; this improves output stability, but it also means that raw scores across VT, CWE, and FWE should be compared mainly within task rather than directly across tasks. Due to single-GPU memory constraints, Mamba LongBench runs use a 20K-token input budget; when the original context exceeds that budget, the tokenized context is truncated by retaining the trailing portion, which weakens direct comparability with Llama on a subset of samples.
 
-\subsection{Experiment A: retrieval is sensitive to interference, not just length}
+\subsection{Experiment A: Needle In A Haystack Retrieval }
 Experiment A tests whether a model can still recover target information as the prompt becomes longer and more cluttered. The distinction between the two tasks is crucial. \texttt{niah\_single\_1} is a single-target retrieval problem; \texttt{niah\_multikey\_1} requires retrieving the correct value \emph{and} binding it to the queried key under interference from other keys and values.
 
 Table~\ref{tab:expa-main} shows a sharp architectural contrast. Llama remains near-saturated across both tasks up to 32K. Falcon3-Mamba is also perfect on single-key retrieval up to 16K, but degrades severely on multi-key retrieval, from 43.6\% at 4K to 21.4\% at 16K. Thus, the retrieval bottleneck is not simply whether a salient fact survives in memory; it is whether the model preserves precise content addressing under distractors.
@@ -263,7 +263,7 @@ Figure~\ref{fig:expa-pos} further reveals a positional asymmetry. Llama remains 
 \label{fig:expa-pos}
 \end{figure}
 
-\subsection{Experiment B1: reasoning degrades heterogeneously across task types}
+\subsection{Experiment B1: Reasoning On RULER Sythetic Dataset}
 Experiment B1 asks a stricter question: once the relevant information is present in the prompt, can the model still manipulate it correctly as context grows? Table~\ref{tab:expb-ruler} shows that the answer is highly task dependent.
 
 \begin{table}[t]
@@ -295,7 +295,7 @@ Two conclusions follow. First, retrieval success does not imply reasoning robust
 \label{fig:expb-ruler-compare}
 \end{figure}
 
-\subsection{Experiment B2: realistic long-context tasks remain difficult}
+\subsection{Experiment B2: Realistic Long-context Tasks On LongBench}
 Experiment B2 moves from controlled synthetic tests to realistic downstream tasks. Table~\ref{tab:expb-longbench} reports the results. Llama outperforms Mamba on all four tasks. The largest gap appears on HotpotQA, where multi-document evidence integration is central. Both models achieve modest scores on GovReport and RepoBench-P, indicating that realistic long-context summarization and repository-scale code completion remain challenging even when nominal context length is sufficient.
 
 \begin{table}[t]
@@ -316,75 +316,84 @@ RepoBench-P & 9.95 & 8.71 \\
 
 These results should be interpreted conservatively. The Mamba runs use a 20K-token cap with tail-preserving truncation for overlength inputs, which affects a subset of examples, especially in RepoBench-P. Nonetheless, the qualitative conclusion is robust: the Transformer maintains a clear advantage on realistic long-context tasks, and the absolute difficulty of these tasks remains high for both models.
 
-\subsection{Experiment C: usable context is limited by serving cost}
-Experiment C evaluates the systems dimension directly. We compare Llama on HuggingFace Transformers and vLLM, together with Mamba on HuggingFace Transformers. Four observations are most relevant.
+\subsection{Experiment C: System Implementation And Serving Efficiency}
 
-\paragraph{Prefill dominates in the workload studied here.}
-Figure~\ref{fig:expc-ttft} shows that time to first token grows rapidly with context length for all tested configurations. For Llama on vLLM at batch size 1, TTFT increases from roughly 380\,ms at 4K to about 4.3\,s at 32K. At batch size 16, 32K TTFT reaches tens of seconds, making interactive use impractical. Since output length is fixed to 128 tokens, this benchmark primarily measures the serving cost of long-input understanding. Under this regime, prefill is the dominant bottleneck.
+Experiment C studies the systems dimension directly. We compare Llama on HuggingFace Transformers and vLLM, and Falcon3-Mamba on HuggingFace Transformers. All observations in this section are based on the concrete deployment stack available to us: \texttt{torch 2.5.1 + CUDA 12.1}, \texttt{transformers 4.49.0}, \texttt{vllm 0.7.3}, \texttt{mamba\_ssm 2.2.4}, and \texttt{causal\_conv1d 1.6.2.post1}. The main lesson is not simply that one architecture has a better asymptotic complexity class than the other. In the present stack, end-to-end serving behavior is shaped jointly by model design, model depth, logits computation strategy, CUDA kernel maturity, and backend scheduling. The resulting picture is therefore more nuanced than the usual ``Transformer is quadratic, Mamba is linear'' summary.
+
+% ===============================C1=================================
+
+\subsubsection{Exp C1: Prefilling}
+
+\paragraph{Prefill remains the main bottleneck for long-input understanding.}
+Figure~\ref{fig:expc-ttft} shows that time to first token (TTFT) grows quickly with context length for both Llama and Mamba. This is the central systems result for our workload. Since Experiment C targets long-input, short-generation understanding, the user-visible latency is dominated by prompt ingestion rather than by long autoregressive continuation. In practice, this means that a context length can be nominally supported and even accurate on retrieval benchmarks, yet still be operationally unattractive because TTFT becomes too large.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/fig1_ttft_vs_context.pdf}
-\caption{TTFT as a function of context length. In this long-input short-generation setting, prefill cost grows quickly with input length and becomes the dominant latency source.}
+\includegraphics[width=0.85\textwidth]{figures/c1_prefill_ttft_vs_context.pdf}
+\caption{TTFT as a function of context length. In the long-input short-generation regime, prefill cost grows quickly with input length and becomes the dominant latency source.}
 \label{fig:expc-ttft}
 \end{figure}
 
-\paragraph{Decode-side behavior is informative but secondary.}
-Figure~\ref{fig:expc-tpot} shows that Mamba's TPOT is nearly flat across tested lengths, whereas Llama's TPOT increases with context length, especially under the HuggingFace backend. This matches the expected contrast between recurrent-state decoding and KV-cache-based decoding. However, this distinction is not the central systems bottleneck for the present project, because the workload does not emphasize long-history or long-generation decoding.
+\paragraph{Why do both TTFT curves look almost linear, even though dense attention is theoretically quadratic?}
+This observation also requires careful interpretation. Figure~\ref{fig:expc-ttft} is not a direct measurement of bare attention complexity; it is an end-to-end measurement of HuggingFace generation with all surrounding components included. For Llama, the path uses PyTorch SDPA, which can dispatch to highly optimized fused kernels. For both models, TTFT also includes linear-cost components such as embedding, projection layers, normalization, logits computation, cache initialization, and generation-framework overhead. Over the tested 4K--16K range, these linear terms and fused-kernel behaviors are large enough that the overall wall-clock trend appears close to linear. This should therefore \emph{not} be read as evidence that Transformer prefill has somehow become truly linear in theory; it means that, in this software stack and range, the end-to-end latency curve is dominated by a mixture of optimized attention kernels and substantial non-attention costs.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/fig4_tpot_vs_context.pdf}
-\caption{TPOT as a function of context length. Mamba remains nearly flat, while Llama becomes more expensive as the attended history grows. This effect is more central to long-generation workloads than to the short-generation setting used here.}
-\label{fig:expc-tpot}
-\end{figure}
-
-\paragraph{Batching helps until prefill becomes dominant.}
-Figure~\ref{fig:expc-throughput} shows that vLLM substantially improves Llama throughput at shorter contexts, but the gain diminishes as context grows and prefill dominates end-to-end latency. In other words, batching is most effective when the system still has room to amortize decode and scheduling overhead; it is less effective when each request already spends most of its time in long-input prefill.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig3_throughput_vs_batch.pdf}
-\caption{Throughput versus batch size for Llama at 8K context. Batching improves serving efficiency, but the benefit is bounded by long-context prefill cost.}
-\label{fig:expc-throughput}
-\end{figure}
-
-\paragraph{Memory accounting depends on the backend.}
-Figure~\ref{fig:expc-memory} requires careful interpretation. Under HuggingFace, peak allocated memory increases with context length, as expected. Under vLLM, measured peak memory remains almost flat because the engine pre-allocates a large KV-cache pool according to the configured GPU-memory utilization. Therefore, the flat vLLM curve should be read as a property of the allocator and reservation strategy in this setup, not as evidence that the working-set memory of long-context inference is truly length-invariant.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig2_memory_vs_context.pdf}
+\includegraphics[width=0.85\textwidth]{figures/c1_prefill_memory_vs_context.pdf}
 \caption{Peak GPU memory versus context length. The vLLM curve mainly reflects pre-allocation under the chosen memory-utilization setting, while HuggingFace memory grows with context length.}
 \label{fig:expc-memory}
 \end{figure}
 
-Taken together, these results show that system efficiency is not an auxiliary consideration. It determines which nominal context lengths remain usable under realistic latency and memory budgets. In the long-input understanding regime studied here, the most immediate serving barrier is prefill and input-time memory cost, not prolonged decode. In our environment, this constraint is especially visible for Mamba at 32K, which is excluded by single-GPU memory limits before model quality can even be evaluated.
+\paragraph{Why does Mamba prefill memory grow faster than Llama despite fixed-size recurrent state?}
+Fig~\ref{fig:expc-memory} shows the peak memory versus prefill context length. At first glance, the memory curve seems paradoxical: Falcon3-Mamba has fixed-size recurrent state, so why does its measured prefill memory still grow with context length, and in our runs even slightly faster than Llama? The answer is that the measured quantity is \emph{peak allocated GPU memory during the full \texttt{generate(max\_new\_tokens=1)} path}, not the recurrent state alone. The recurrent cache in Falcon3-Mamba is indeed almost constant-size, but prefill still allocates sequence-length-dependent activations, selective-scan workspaces, and logits tensors.
 
-\section{Discussion}
-\label{sec:discussion}
+In the present environment, the implementation details matter substantially. Falcon3-Mamba is a 64-layer model, whereas Llama-3.1-8B uses 32 layers. More importantly, the \texttt{transformers==4.49.0} implementation paths are not symmetric: Llama generation supports \texttt{logits\_to\_keep=1}, so it can compute only the final-step logits during first-token generation, while Falcon3-Mamba does not support this optimization and instead computes full-sequence logits, then converts them to \texttt{float32}. As a result, Mamba's fixed recurrent state does \emph{not} imply fixed prefill memory. What stays fixed is the decode state; what still grows is the rest of the end-to-end prefill computation.
 
-\subsection{Long-context ability is inherently non-scalar}
-The experiments consistently reject any one-number view of long-context ability. Falcon3-Mamba is perfect on single-key retrieval up to 16K, but fails badly on multi-key retrieval. Llama is near-perfect on retrieval at 32K, but one synthetic reasoning task collapses at that same length. Serving results further show that a context length can be nominally supported and even accurate, yet impractical because prefill latency becomes too large. These are qualitatively different failure modes and should not be merged into a single score.
+% ===============================C2=================================
 
-\subsection{Nominal context and effective context must be separated}
-The gap between nominal and effective context is both real and task dependent. For retrieval under interference, Llama remains effective throughout the tested range, whereas Mamba does not. For reasoning, even Llama's effective length varies sharply by task. This suggests that future evaluations should report effective context by capability family, for example retrieval, aggregation, tracing, summarization, and serving feasibility, rather than only by a model-wide advertised window.
+\subsubsection{Exp C2: Decoding}
 
-\subsection{Architecture matters, but so does the operation being tested}
-The Transformer advantage in this study is clearest when exact content addressing and multi-span integration matter. The state-space model shows its strongest relative benefit in decode scaling, not in retrieval or end-task reasoning accuracy. This does not imply that SSMs are categorically inferior for long context; rather, it shows that architectural comparisons are meaningful only when tied to the underlying operation of interest.
+\paragraph{Decode-side scaling is informative, but the absolute TPOT still favors Llama.}
+To verify whether Mamba preserves its expected decode \emph{length sensitivity} advantage, we measured TPOT while sweeping prompt length from 256 to 16K tokens at fixed output length 128. Table~\ref{tab:expc-prompt-sweep} shows the result. Llama's TPOT rises from 28.16 to 46.58\,ms/token as prompt length increases, whereas Mamba remains almost flat, from 72.73 to 73.34\,ms/token. This looks counterintuitive if one expects Mamba to be categorically faster at decoding, but the explanation is straightforward. Falcon3-Mamba has twice as many layers, and its single-token path still traverses a long chain of projection, causal-conv1d, selective-state-update, and output-projection kernels. In the current HuggingFace plus CUDA 12.1 stack, these kernels do not enjoy the same level of maturity as Llama's SDPA-based attention path, so the per-token constant factor is much larger. The correct interpretation is therefore not ``Mamba is faster at decode,'' but rather ``Mamba is \emph{less sensitive} to prompt length while still slower in absolute per-token latency in the current implementation.''
 
-\subsection{Serving should be treated as part of evaluation, with workload made explicit}
-Long-context research often reports model quality and serving cost separately. Our results suggest that this separation is too weak. If a context length can only be served with prohibitive TTFT or requires memory allocation strategies unavailable on target hardware, then the corresponding capability is only partially realized. At the same time, system conclusions must be workload-specific: in our long-input short-generation setting, prefill is the main bottleneck, whereas long-history generation would place more emphasis on KV-cache management and decode-side IO. Serving feasibility should therefore be treated as a first-class component of long-context evaluation, but always with the target workload stated explicitly.
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/c2_decode_tpot_vs_prompt_len.pdf}
+\caption{Decode prompt-length sweep at fixed output length 128. Mamba stays almost flat with context length, while Llama becomes slower as prompt length grows.}
+\label{fig:expc-prompt-sweep}
+\end{figure}
 
-\subsection{Limitations}
+% ===============================C3=================================
+
+\subsubsection{Exp C3: Serving}
+
+\paragraph{Batching and backend engineering still matter a great deal.}
+Figure~\ref{fig:expc-throughput} shows that vLLM substantially improves Llama throughput relative to vanilla HuggingFace serving, especially before prefill fully dominates the request. This result is expected: vLLM is built for serving, not just eager single-request generation, and benefits from PagedAttention-style KV management and more effective batching. As context grows, however, the gain is increasingly limited by long-input prefill itself. In other words, backend engineering can dramatically improve usable throughput, but it cannot remove the core cost of ingesting very long prompts.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/c3_backend_llama_requests_vs_batch_8k.pdf}
+\caption{Throughput versus batch size for Llama at 8K context. vLLM improves serving efficiency substantially, but the gain is still bounded by long-context prefill cost.}
+\label{fig:expc-throughput}
+\end{figure}
+
+Taken together, Experiment C shows that long-context system efficiency is not determined by nominal complexity alone. In our experiments, Mamba's recurrent state is indeed fixed-size, and its decode cost is less sensitive to prompt length. Yet under the current HuggingFace implementation, older Mamba kernel stack, and single-4090 hardware profile, these theoretical advantages do not automatically become better end-to-end TTFT, peak-memory curves, or TPOT. Instead, logits computation strategy, model depth, kernel maturity, and serving backend design all materially affect the observed outcome. For the long-input understanding regime studied here, the practical boundary of usable context is still set primarily by prefill latency and input-time memory cost.
+
+\section{Limitations}
+
 This report has several limitations. The empirical study covers only two models and one hardware profile, so the architectural conclusions are directional rather than exhaustive. The LongBench evaluation uses a local scoring implementation rather than the official benchmark harness, although the metric definitions follow the task conventions. Mamba cannot be evaluated at 32K in the current single-GPU setup, and its LongBench results are partially affected by tail-preserving truncation. Inference-time extension methods are discussed in the survey but are not benchmarked experimentally in a controlled ablation. Experiment C uses synthetic filler prompts to isolate long-input serving behavior, which simplifies interpretation but does not capture every semantic workload pattern, especially long-history generation.
+
+A second limitation is that several of the most important observations in Experiment C are constrained by the current software and system stack rather than by model architecture alone. Some of these constraints are effectively outside the scope of this project. In particular, the single-4090, CUDA-12.1 environment prevents us from testing more aggressive long-context configurations for Falcon3-Mamba, and the HuggingFace implementation available in our stack (\texttt{transformers 4.49.0}) uses an asymmetric generation path: Llama benefits from \texttt{logits\_to\_keep=1}, whereas Falcon3-Mamba does not. This makes it difficult to fully disentangle model-intrinsic behavior from framework-level effects without rewriting or patching the serving path itself. Likewise, the observed gap between HuggingFace and vLLM reflects not only architectural properties but also allocator strategy, backend scheduling, and version maturity; reproducing the same study under a newer driver, newer \texttt{transformers}/\texttt{vllm}/\texttt{mamba\_ssm} stack, or a higher-memory GPU could change the absolute numbers substantially.
+
+Some of these issues are, in principle, addressable, but they were too time-consuming or system-heavy for the present project. A more complete future study should at least separate backbone prefill from LM-head cost, compare patched and unpatched Falcon3-Mamba generation paths, and rerun the serving benchmarks under a more up-to-date kernel stack. It would also be valuable to add multi-GPU or higher-memory deployment settings, and to include a serving framework that supports stronger Mamba-side optimization rather than only comparing Mamba under vanilla HuggingFace against Llama under both HuggingFace and vLLM. These extensions are feasible, but they require infrastructure and engineering effort beyond a course-project timeline. For this reason, the system conclusions of Experiment C should be read as conclusions about \emph{practical long-context behavior under the currently available stack}, not as a final statement about the architecture-level upper bound of Transformer versus Mamba serving efficiency.
+
 
 \section{Conclusion}
 \label{sec:conclusion}
 
 This report argued that long-context ability should be understood as a joint property of model architecture, inference strategy, task structure, and system realization. The survey component organized the field into five dimensions: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. The empirical component focused specifically on long-input short-generation understanding and showed that these dimensions can diverge sharply in practice.
 
-Three conclusions are especially clear. First, large nominal windows do not guarantee reliable use of long inputs. Second, retrieval and reasoning are separable: a model may still find evidence while failing to use it correctly. Third, serving efficiency defines the practical boundary of long-context capability just as much as benchmark accuracy does, but the relevant bottleneck depends on workload. For the long-input understanding tasks studied here, prefill is the main systems constraint; for long-history generation, decode-side KV-cache methods become more central. This suggests that long-context evaluation should become more capability-specific and more system-aware, and that architectural claims should be tested against both controlled synthetic probes and realistic downstream tasks.
+Three conclusions are especially clear. First, large nominal windows do not guarantee reliable use of long inputs. Second, retrieval and reasoning are separable: a model may still find evidence while failing to use it correctly. Third, serving efficiency defines the practical boundary of long-context capability just as much as benchmark accuracy does, but the relevant bottleneck depends on workload and implementation. These suggests that long-context evaluation should become more capability-specific, more system-aware, and more explicit about the software stack through which architectural claims are actually realized.
 
 \bibliographystyle{plainnat}
 \bibliography{references}

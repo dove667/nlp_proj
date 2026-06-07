@@ -21,8 +21,9 @@ RESULTS_DIR = Path(__file__).parents[2] / "results" / "exp_c"
 PREFILL_CONTEXT_LENS = [4096, 8192, 16384]
 CAPACITY_CONTEXT_LENS = [8192, 16384]
 CAPACITY_BATCH_SIZES = [1, 2, 4, 8, 16]
-DECODE_PROMPT_LEN = 256
-DECODE_OUTPUT_LEN = 1024
+DECODE_PROMPT_LENS = [256, 4096, 8192, 16384]
+DECODE_OUTPUT_LEN = 128
+BACKEND_OUTPUT_LEN = 1024
 FILL_TEXT = "The quick brown fox jumps over the lazy dog. "
 CONTINUATION_PREFIX_TEMPLATE = (
     "You are completing a continuation-only generation task. "
@@ -96,8 +97,8 @@ def make_prompt_tensors(tokenizer: Any, prompt_text: str, batch_size: int, devic
     return input_ids, attention_mask
 
 
-def make_continuation_prompt(tokenizer: Any, target_prompt_len: int, target_output_len: int) -> str:
-    prefix_text = CONTINUATION_PREFIX_TEMPLATE.format(target_output_len=target_output_len)
+def make_continuation_prompt(tokenizer: Any, target_prompt_len: int) -> str:
+    prefix_text = CONTINUATION_PREFIX_TEMPLATE.format(target_output_len=DECODE_OUTPUT_LEN)
     prefix_ids = tokenizer.encode(prefix_text, add_special_tokens=False)
     suffix_ids = tokenizer.encode(CONTINUATION_SUFFIX, add_special_tokens=False)
     available = max(target_prompt_len - len(prefix_ids) - len(suffix_ids), 1)

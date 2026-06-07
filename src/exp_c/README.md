@@ -13,12 +13,12 @@
 - `bench_decode_hf.py`
   - C2 decode 特性
   - `Llama HF vs Mamba HF`
-  - `continuation prompt + long generation`，`bs=1`
+  - `continuation prompt + fixed-length generation`，`bs=1`
   - 指标：`TPOT`
-  - 默认 `prompt_len=256`、`output_len=1024`
+  - 固定 `output_len=128`，扫 `prompt_len`
+  - 默认 `256/4K/8K/16K`
   - prompt 会显式要求模型至少生成目标长度，减少提前停止
   - TPOT 按真实生成的新 token 数计算，并额外记录 `avg_actual_output_len`
-  - 可选 `--output_lens 256 512 1024` 做小 ablation
 
 - `bench_backend_llama.py`
   - C3 服务可用性/调度对比
@@ -42,10 +42,10 @@ python src/exp_c/bench_backend_llama.py
 python src/exp_c/analyze_exp_c.py
 ```
 
-C2 小 ablation 示例：
+C2 prompt-length sweep 示例：
 
 ```bash
-python src/exp_c/bench_decode_hf.py --output_lens 256 512 1024
+python src/exp_c/bench_decode_hf.py --prompt_lens 256 4096 8192 16384
 python src/exp_c/analyze_exp_c.py
 ```
 
@@ -59,8 +59,7 @@ python src/exp_c/analyze_exp_c.py
 
 - `c1_prefill_ttft_vs_context.pdf`
 - `c1_prefill_memory_vs_context.pdf`
-- `c2_decode_tpot_compare.pdf`
-- `c2_decode_tpot_vs_output_len.pdf`（仅在多 `output_len` 时生成）
+- `c2_decode_tpot_vs_prompt_len.pdf`
 - `c3_backend_llama_requests_vs_batch_8k.pdf`
 - `c3_backend_llama_requests_vs_batch_16k.pdf`
 - `c3_backend_llama_hf_capacity_summary.csv`

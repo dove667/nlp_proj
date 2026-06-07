@@ -6,9 +6,9 @@ import torch
 from vllm import LLM, SamplingParams
 
 from common import (
+    BACKEND_OUTPUT_LEN,
     CAPACITY_BATCH_SIZES,
     CAPACITY_CONTEXT_LENS,
-    DECODE_OUTPUT_LEN,
     RESULTS_DIR,
     hf_generate,
     load_hf_model,
@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backends", nargs="+", choices=["hf", "vllm"], default=["hf", "vllm"])
     parser.add_argument("--context_lens", type=int, nargs="+", default=CAPACITY_CONTEXT_LENS)
     parser.add_argument("--batch_sizes", type=int, nargs="+", default=CAPACITY_BATCH_SIZES)
-    parser.add_argument("--output_len", type=int, default=DECODE_OUTPUT_LEN)
+    parser.add_argument("--output_len", type=int, default=BACKEND_OUTPUT_LEN)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.90)
     parser.add_argument("--n_warmup", type=int, default=1)

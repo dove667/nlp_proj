@@ -43,6 +43,13 @@ def load_optional(results_dir: Path, filename: str) -> pd.DataFrame:
     return pd.DataFrame(load_rows(path))
 
 
+def load_optional_csv(results_dir: Path, filename: str) -> pd.DataFrame:
+    path = results_dir / filename
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path)
+
+
 def style() -> None:
     plt.rcParams.update({"font.size": 11, "axes.labelsize": 12, "xtick.labelsize": 11, "ytick.labelsize": 11})
 
@@ -112,45 +119,34 @@ def plot_prefill(df: pd.DataFrame, out_dir: Path) -> None:
 def plot_decode(df: pd.DataFrame, out_dir: Path) -> None:
     if df.empty:
         return
-    unique_output_lens = sorted(df["output_len"].dropna().unique())
-    if len(unique_output_lens) <= 1:
-        fig, ax = make_fig("Exp C2 Decode TPOT", "HF-only, continuation prompt, bs=1", figsize=(7.2, 5.2))
-        order = ["llama31", "mamba"]
-        sub = df.drop_duplicates(subset=["model"]).copy()
-        sub["model"] = pd.Categorical(sub["model"], categories=order, ordered=True)
-        sub = sub.sort_values("model").dropna(subset=["model"])
-        ax.bar(
-            [LABELS[(model_name, "hf")].replace(" — HF", "") for model_name in sub["model"]],
-            sub["tpot_ms"],
-            color=[COLORS[(m, "hf")] for m in sub["model"]],
-            edgecolor=EDGE,
-            width=0.6,
+    prompt_len_col = "target_prompt_len" if "target_prompt_len" in df.columns else "prompt_len"
+    df = df.copy()
+    if "backend" not in df.columns:
+        df["backend"] = "hf"
+    df = df.dropna(subset=[prompt_len_col, "tpot_ms"])
+
+    fig, ax = make_fig(
+        "Exp C2 Decode TPOT vs Prompt Length",
+        "HF-only, continuation prompt, bs=1, fixed output length",
+    )
+    for key, group in df.groupby(["model", "backend"]):
+        group = group.sort_values(prompt_len_col)
+        ax.plot(
+            group[prompt_len_col] / 1024,
+            group["tpot_ms"],
+            label=LABELS[key],
+            color=COLORS[key],
+            marker=MARKERS[key],
+            linewidth=2.4,
+            markersize=7,
         )
-        ax.set_ylabel("TPOT (ms/token)", color=TEXT)
-        fig.savefig(out_dir / "c2_decode_tpot_compare.pdf", bbox_inches="tight")
-        plt.close(fig)
-    else:
-        fig, ax = make_fig(
-            "Exp C2 Decode TPOT Ablation",
-            "HF-only, continuation prompt, bs=1, vary output length",
-        )
-        for key, group in df.groupby(["model", "backend"]):
-            group = group.sort_values("output_len")
-            ax.plot(
-                group["output_len"],
-                group["tpot_ms"],
-                label=LABELS[key],
-                color=COLORS[key],
-                marker=MARKERS[key],
-                linewidth=2.4,
-                markersize=7,
-            )
-        ax.set_xlabel("Output length (tokens)", color=TEXT)
-        ax.set_ylabel("TPOT (ms/token)", color=TEXT)
-        add_legend(ax)
-        fig.savefig(out_dir / "c2_decode_tpot_vs_output_len.pdf", bbox_inches="tight")
-        plt.close(fig)
-    df.sort_values(["model", "output_len"]).to_csv(out_dir / "c2_decode_summary.csv", index=False)
+    ax.set_xlabel("Prompt length (K tokens)", color=TEXT)
+    ax.set_ylabel("TPOT (ms/token)", color=TEXT)
+    add_legend(ax)
+    fig.savefig(out_dir / "c2_decode_tpot_vs_prompt_len.pdf", bbox_inches="tight")
+    plt.close(fig)
+
+    df.sort_values(["model", prompt_len_col]).to_csv(out_dir / "c2_decode_summary.csv", index=False)
 
 
 def plot_backend(df: pd.DataFrame, out_dir: Path) -> None:
@@ -207,7 +203,8 @@ def main() -> None:
     style()
 
     prefill_df = load_optional(args.results_dir, "prefill_hf.jsonl")
-    decode_df = load_optional(args.results_dir, "decode_hf.jsonl")
+    decode_csv_df = load_optional_csv(args.results_dir, "c2_decode_prompt_len_sweep_summary.csv")
+    decode_df = decode_csv_df if not decode_csv_df.empty else load_optional(args.results_dir, "decode_hf.jsonl")
     backend_df = load_optional(args.results_dir, "backend_llama.jsonl")
 
     plot_prefill(prefill_df, out_dir)

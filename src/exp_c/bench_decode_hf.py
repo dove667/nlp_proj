@@ -11,6 +11,7 @@ from common import (
     make_batch_tensors,
     sync_cuda,
     time_hf_generate,
+    unload_hf_model,
     write_rows,
 )
 
@@ -32,7 +33,12 @@ def main() -> None:
     out_path = args.out_dir / "decode_hf.jsonl"
 
     for model_name in args.models:
-        model, tokenizer = load_hf_model(model_name, args.device)
+        try:
+            model, tokenizer = load_hf_model(model_name, args.device)
+        except torch.cuda.OutOfMemoryError:
+            print(f"OOM while loading {model_name}; skipping this model")
+            torch.cuda.empty_cache()
+            continue
         print(f"[{model_name}] prompt_len={args.prompt_len} output_len={args.output_len} ...", flush=True)
         input_ids, attention_mask = make_batch_tensors(tokenizer, args.prompt_len, 1, args.device)
 
@@ -67,6 +73,7 @@ def main() -> None:
             "tpot_ms": sum(tpot_ms_list) / len(tpot_ms_list),
         }
         write_rows(out_path, [row])
+        unload_hf_model(model, tokenizer)
 
     print(f"Saved {out_path}")
 

@@ -14,6 +14,7 @@ from common import (
     reset_peak_memory,
     sync_cuda,
     time_hf_generate,
+    unload_hf_model,
     write_rows,
 )
 
@@ -34,7 +35,12 @@ def main() -> None:
     out_path = args.out_dir / "prefill_hf.jsonl"
 
     for model_name in args.models:
-        model, tokenizer = load_hf_model(model_name, args.device)
+        try:
+            model, tokenizer = load_hf_model(model_name, args.device)
+        except torch.cuda.OutOfMemoryError:
+            print(f"OOM while loading {model_name}; skipping this model")
+            torch.cuda.empty_cache()
+            continue
         total = len(args.context_lens)
         for idx, context_len in enumerate(args.context_lens, start=1):
             print(f"[{model_name}] [{idx}/{total}] ctx={context_len} ...", flush=True)
@@ -73,6 +79,7 @@ def main() -> None:
             except torch.cuda.OutOfMemoryError:
                 print(f"  OOM — skipping {model_name} ctx={context_len}")
                 torch.cuda.empty_cache()
+        unload_hf_model(model, tokenizer)
 
     print(f"Saved {out_path}")
 

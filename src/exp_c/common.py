@@ -1,5 +1,6 @@
 import os
 import time
+import gc
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,14 @@ def load_hf_model(model_name: str, device: str) -> tuple[Any, Any]:
         local_files_only=True,
     ).to(device).eval()
     return model, tokenizer
+
+
+def unload_hf_model(model: Any, tokenizer: Any) -> None:
+    del model
+    del tokenizer
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def make_fill_ids(tokenizer: Any, target_len: int) -> list[int]:

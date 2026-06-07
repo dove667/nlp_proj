@@ -14,6 +14,8 @@
 \usepackage{multirow}
 \usepackage{enumitem}
 \usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{array}
 \usepackage{hyperref}
 \usepackage[numbers,sort&compress]{natbib}
 
@@ -29,173 +31,214 @@
 \title{\textbf{What Determines Long-Context Ability in LLMs?}\\
 \large \textbf{A Survey with Experimental Analysis}}
 \author{Sihua Zhang, Minghao Xi}
-\date{\today}
+\date{}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Long-context ability has become central to modern large language models (LLMs), yet the field still lacks a stable answer to a deceptively simple question: what does it mean for a model to use long context well? Larger context windows alone are insufficient. A model may accept 128K or even million-token inputs while degrading on retrieval from the middle of a document, on multi-hop aggregation across distant spans, or under realistic serving constraints. This report surveys long-context LLMs through a unified lens that separates five factors: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. We review architectural routes for long-sequence modeling, context extension methods, retrieval and memory augmentation, and system techniques including IO-aware attention and KV-cache management. We further map the evaluation landscape from Needle-in-a-Haystack tests to RULER, LongBench, and LongBench v2. On the empirical side, we conduct a cross-architecture study on RULER NIAH retrieval, RULER reasoning, and LongBench tasks using Llama-3.1-8B-Instruct and Falcon3-Mamba-7B-Instruct, together with a system performance comparison across HuggingFace and vLLM backends. The results show that long-context failure does not emerge as a smooth curve but as task-dependent breakdown in key-value binding, position robustness, reasoning stability, and system feasibility. Our main claim is that long-context ability is a joint outcome of model architecture, task structure, inference policy, and system implementation.
+Long-context capability has become a central differentiator of modern large language models (LLMs), but it is often described too coarsely by nominal context-window length alone. In practice, a model may admit long inputs yet still fail to retrieve the correct evidence, to reason over dispersed facts, or to serve such inputs with acceptable latency and memory cost. This report studies long-context LLMs from a unified perspective that separates five dimensions: \textbf{nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency}. Our empirical focus is \textbf{long-input, short-generation understanding}: retrieval, question answering, summarization, and controlled reasoning over long contexts, rather than long-history, long-generation decoding. We first survey the main technical routes for long-context modeling, including sparse and hybrid attention, state-space models, positional extrapolation, retrieval augmentated inference, and serving methods for both long-input understanding and long-context generation. We then review the evaluation landscape, emphasizing that different benchmarks probe different failure modes. Empirically, we compare Llama-3.1-8B-Instruct and Falcon3-Mamba-7B-Instruct on RULER NIAH retrieval, RULER reasoning, LongBench tasks, and serving benchmarks. The results show that long-context behavior is highly non-uniform: single-key retrieval can remain intact while multi-key binding collapses; some reasoning operations stay robust at 32K while others fail much earlier; and, in the long-input short-generation regime studied here, usable context is further bounded primarily by prefill latency and memory allocation. The overall conclusion is that long-context ability is not a scalar model attribute but a joint outcome of architecture, task structure, inference policy, and system realization.
 \end{abstract}
 
 \section{Introduction}
-Large language models are deployed in settings that are inherently long-context: document QA, multi-document synthesis, repository-scale code understanding, long-horizon agent memory, and structured analysis over extended logs. These scenarios have driven rapid growth in nominal context windows---from a few thousand tokens to 32K, 128K, and beyond. Yet the field has accumulated evidence that accepting longer inputs is not the same as using them effectively \citep{liu2024lost, hsieh2024ruler, bai2024longbench, kuratov2024babilong, bai2025longbenchv2}.
+Large language models are increasingly deployed in settings where relevant evidence is long, dispersed, and structurally heterogeneous: document question answering, multi-document synthesis, repository-scale code understanding, long-horizon agent memory, and long-form summarization. This shift has driven rapid growth in nominal context windows, from a few thousand tokens to 32K, 128K, and even million-token regimes. However, recent evidence consistently shows that a larger advertised window does not guarantee effective use of long inputs \citep{liu2024lost, hsieh2024ruler, bai2024longbench, kuratov2024babilong, bai2025longbenchv2}.
 
-This mismatch appears in several ways. Position-sensitive evaluations show that models often underuse information placed in the middle of long prompts \citep{liu2024lost}. Synthetic benchmarks beyond single-needle retrieval reveal a gap between claimed and effective context size \citep{hsieh2024ruler}. Realistic multi-task evaluations suggest that deeper reasoning, rather than nominal window size, is now the main long-context bottleneck \citep{bai2025longbenchv2}. Meanwhile, systems work shows that deployment is constrained by prefill latency, KV-cache growth, and batching efficiency even when the model is theoretically capable of longer inputs \citep{dao2022flashattention, kwon2023pagedattention, zheng2024sglang}.
+Three observations motivate this report. First, long-context failure is often \emph{positional}: models may handle evidence near the beginning or end of a prompt more reliably than evidence in the middle \citep{liu2024lost}. Second, long-context failure is also \emph{operational}: a model may retrieve a single salient fact yet fail when it must bind the correct key to the correct value or aggregate evidence across multiple spans \citep{hsieh2024ruler, kuratov2024babilong}. Third, long-context failure is \emph{systemic}: even when the model remains accurate, practical deployment can be constrained by different bottlenecks depending on workload. For long-input understanding with short outputs, prefill latency and input-time memory cost are often dominant; for long-history or long-generation workloads, decode-time KV-cache growth and IO pressure become more central \citep{dao2022flashattention, kwon2023pagedattention, zheng2024sglang}.
 
-This report is organized around a single question: \emph{what determines long-context ability in LLMs?} We decompose it into five dimensions:
+The central question of this report is therefore not ``which model has the largest context window,'' but rather: \emph{what determines long-context ability in LLMs?} We argue that the answer is inherently multi-dimensional. Throughout the report, we distinguish five factors:
 \begin{enumerate}[leftmargin=1.5em]
-  \item \textbf{Nominal context length}: how many tokens the model and serving stack claim to support.
-  \item \textbf{Effective retrieval length}: how far relevant information can be reliably retrieved.
-  \item \textbf{Long-range reasoning ability}: whether the model can aggregate, compare, and reason over distant evidence.
-  \item \textbf{Inference-time extension effectiveness}: how much usable context can be recovered without retraining.
-  \item \textbf{System serving efficiency}: whether the model can run with acceptable latency, memory, and throughput.
+  \item \textbf{Nominal context length}: the maximum length a model and serving stack claim to support.
+  \item \textbf{Effective retrieval length}: the length regime within which relevant evidence can still be reliably recovered.
+  \item \textbf{Long-range reasoning ability}: the ability to aggregate, compare, count, or trace information distributed across long inputs.
+  \item \textbf{Inference-time extension effectiveness}: the extent to which usable context can be improved without retraining the backbone model.
+  \item \textbf{System serving efficiency}: whether long contexts remain practical under latency, throughput, and memory constraints.
 \end{enumerate}
 
-Section~\ref{sec:framework} formalizes this framework. Sections~\ref{sec:modeling}--\ref{sec:systems} survey modeling, extension, retrieval, and systems techniques. Section~\ref{sec:evaluation} reviews benchmarks and what they measure. Section~\ref{sec:experiments} presents our experimental study across retrieval, reasoning, and system performance. Section~\ref{sec:discussion} synthesizes the evidence, and Section~\ref{sec:conclusion} concludes.
+This framing guides both the survey and the experiments. On the survey side, we organize prior work by how it changes one or more of these five dimensions, while explicitly separating \emph{long-input understanding} from \emph{long-context generation}. On the empirical side, we compare a dense Transformer, Llama-3.1-8B-Instruct, with a state-space model (SSM), Falcon3-Mamba-7B-Instruct, across retrieval, reasoning, and serving experiments, all under a long-input short-generation setting. The resulting evidence supports a simple thesis: \emph{long-context ability is not a single capability and should not be reported as a single number.}
 
-\section{Problem Formulation and Analytical Framework}
+\section{A Five-Dimensional View of Long-Context Ability}
 \label{sec:framework}
 
-\subsection{Why context window size is not enough}
-Context window size is a necessary but insufficient condition. A larger window makes it possible to provide more evidence, but says nothing about whether the model can retrieve the right facts, combine them correctly, or do so under realistic latency and memory budgets. This distinction has become clearer as evaluations evolved from single-needle retrieval to richer tests of aggregation and multi-hop tracing \citep{hsieh2024ruler, zhang2024infinitebench, kuratov2024babilong}.
+\subsection{Why context-window length is an incomplete descriptor}
+Context-window length is a necessary condition for long-context processing, but it is not sufficient. A longer window only states that more tokens can be admitted by the model and serving stack. It does not guarantee that the model will retrieve the right evidence, preserve key-value bindings under interference, reason over distant spans, or remain deployable at acceptable cost. This gap between nominal and usable context has been observed in a growing body of recent work \citep{liu2024lost, hsieh2024ruler, bai2025longbenchv2}.
 
-\subsection{A five-dimensional view of long-context ability}
-
-\paragraph{Nominal context length.}
-The maximum context size advertised by a model or infrastructure stack. Influenced by positional encoding, training length, and serving software. It answers ``can the input be admitted?'' not ``can it be used well?''
-
-\paragraph{Effective retrieval length.}
-The largest regime at which relevant information can be found reliably. Needle-in-a-Haystack, key-value retrieval, and RULER retrieval tasks are natural measurement tools \citep{liu2024lost, hsieh2024ruler}.
-
-\paragraph{Long-range reasoning ability.}
-Multi-hop chaining, cross-segment aggregation, comparison, and variable tracking over distant evidence. Recent benchmarks suggest this is the hardest long-context sub-problem \citep{hsieh2024ruler, kuratov2024babilong, bai2025longbenchv2}.
-
-\paragraph{Inference-time extension effectiveness.}
-Many approaches do not redesign the architecture but instead modify positional scaling, chunk input, manage cache, or introduce memory mechanisms at inference time \citep{chen2023pi, peng2023yarn, ding2024longrope, xiao2023streamingllm, jin2024selfextend, xiao2024infllm, zhang2023h2o, li2024snapkv, wang2025fier}. Their value lies in how much effective context they recover per unit complexity.
-
-\paragraph{System serving efficiency.}
-Long context is constrained by prefill time, decode throughput, peak memory, cache reuse, and batching. System work determines what long-context regimes are empirically reachable \citep{dao2022flashattention, dao2023flashattention2, kwon2023pagedattention, zheng2024sglang}.
-
-\subsection{Main thesis}
-Long-context ability is a \emph{joint property} of model architecture, inference strategy, task type, and system realization. A model may preserve single-needle retrieval but fail on aggregation, or reason well at moderate length but become unusably slow under serving constraints.
-
-\section{Technical Foundations of Long-Context Modeling}
-\label{sec:modeling}
-
-\subsection{The standard Transformer bottleneck}
-Full self-attention offers flexible content-based interaction at the cost of the well-known quadratic complexity:
-\begin{equation}
-\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\left(\frac{QK^\top}{\sqrt{d}}\right)V.
-\end{equation}
-For a sequence of length $n$, time and memory scale as $\mathcal{O}(n^2 d)$ and $\mathcal{O}(n^2)$ respectively. In long-context regimes, memory traffic and KV-cache growth become equally limiting as arithmetic cost \citep{dao2022flashattention}.
-
-\subsection{Sparse and local-global attention}
-Longformer combines local sliding-window attention with task-motivated global tokens, achieving linear scaling for many practical settings \citep{beltagy2020longformer}. BigBird augments local attention with random and global connections \citep{zaheer2020bigbird}. Under a local window $w$, complexity reduces to $\mathcal{O}(nwd)$ with $w \ll n$. Their limitation is reduced flexibility: when attention patterns are fixed, the model may be unable to connect distant tokens that are critical for a particular instance.
-
-\subsection{Linear-time, low-rank, and state-space alternatives}
-An alternative route is to approximate or reformulate attention itself. State-space models (SSMs) represent the most prominent recent direction. A standard discrete-time SSM can be written as
-\begin{equation}
-h_t = A h_{t-1} + B x_t, \qquad y_t = C h_t,
-\end{equation}
-where information propagates through a compressed recurrent state rather than an ever-growing attention map. Mamba makes key components input-dependent:
-\begin{equation}
-(A_t,B_t,C_t)=g(x_t), \qquad
-h_t = A_t h_{t-1} + B_t x_t, \qquad y_t = C_t h_t,
-\end{equation}
-so the recurrence is conditioned on the current token rather than governed by fixed dynamics \citep{gu2023mamba}. Mamba-2 reframes the relationship through structured state space duality \citep{dao2024mamba2}. Hybrid models such as Jamba suggest that the practical frontier may combine a small amount of attention with more efficient recurrent computation \citep{lieber2024jamba}. Gated DeltaNet further targets retrieval weaknesses in Mamba-like models \citep{yang2024gateddeltanet}.
-
-\subsection{Implication}
-Pure linear or recurrent models offer efficiency gains, but the strongest long-context behavior often still benefits from exact or near-exact retrieval paths through attention, hybridization, or external memory.
-
-\section{Extending Usable Context Without Retraining the Backbone}
-\label{sec:extension}
-
-A large share of long-context progress comes from keeping the backbone intact while changing how context is represented, accessed, or selected. We group these methods by intervention point.
-
-\subsection{Positional extension}
-ALiBi adds a linear distance bias to attention logits, supporting test-time extrapolation:
-\begin{equation}
-e_{ij}^{(h)}=\frac{q_i^\top k_j}{\sqrt{d}} - m_h(i-j),
-\end{equation}
-where $m_h$ is a head-specific slope \citep{press2022alibi}. In the RoPE family, Position Interpolation rescales positions into the training range via $p' = p \cdot L_{\text{train}} / L_{\text{test}}$, stabilizing extension with minimal fine-tuning \citep{chen2023pi}. YaRN improves efficiency, while LongRoPE pushes to million-token windows through non-uniform interpolation \citep{peng2023yarn, ding2024longrope}. These methods answer ``how do we feed longer inputs?'' rather than ``how do we ensure the model reasons well once those inputs are available?''
-
-\subsection{Inference-time context adaptation}
-Self-Extend constructs a bi-level attention pattern at inference time: neighbor attention preserves local fidelity within a short range, while grouped attention aggregates distant tokens into coarser units \citep{jin2024selfextend}.
-
-KV-cache adaptation methods target a different point: the stored key-value representations during generation. KIVI compresses KV precision asymmetrically (keys per-channel, values per-token) \citep{liu2024kivi}. StreamingLLM retains only early attention-sink tokens plus a recent window \citep{xiao2023streamingllm}. H$_2$O dynamically evicts tokens by accumulated attention mass, keeping ``heavy hitters'' that are repeatedly referenced \citep{zhang2023h2o}. SnapKV front-loads selection: it uses a short observation window at the end of the prompt to predict which KV positions each head will attend to during generation \citep{li2024snapkv}. FIER performs fine-grained per-step token retrieval using 1-bit quantized keys as lightweight proxies \citep{wang2025fier}.
-
-InfLLM sits at the boundary between KV-cache adaptation and retrieval augmentation. It stores distant context in external memory and retrieves relevant units during attention computation \citep{xiao2024infllm}. Unlike eviction methods that operate within the standard attention mechanism, InfLLM introduces an explicit external memory queried by the model, making it closer in spirit to retrieval-augmented approaches.
-
-\subsection{Retrieval as context selection}
-A complementary perspective is that long-context processing is often about deciding which evidence to surface before the model reasons over it. RAPTOR organizes documents through recursive abstraction for tree-structured retrieval \citep{sarthi2024raptor}. LongRAG shows that stronger readers make larger retrieval units feasible \citep{wang2024longrag}. Anthropic's contextual retrieval emphasizes that retrieval quality depends on preserving local context around chunks rather than embedding isolated fragments \citep{anthropic2024contextualretrieval}.
-
-\subsection{What these strategies change}
-Positional extension changes \emph{admissible length}. Attention-structure reorganization changes \emph{how the model attends} to distant tokens. KV-cache adaptation changes \emph{what is retained in memory} during generation---differing in whether they compress precision (KIVI), apply a fixed rule (StreamingLLM), perform dynamic eviction (H$_2$O), front-load selection (SnapKV), or use per-step retrieval (FIER). External memory (InfLLM) changes \emph{how remote context is stored and accessed}. Retrieval augmentation changes \emph{which evidence enters the context at all}. Because these strategies target different failure modes, gains on one dimension do not imply gains on others.
-
-\section{Systems for Long-Context LLMs}
-\label{sec:systems}
-
-Long-context deployment is frequently dominated by system constraints. If prefill is too slow, KV-cache memory prevents batching, or cache reuse is poor, nominal context support has limited practical value.
-
-\subsection{IO-aware attention}
-FlashAttention reframes attention as an IO problem, showing that reducing high-bandwidth-memory traffic yields large gains without approximating the computation \citep{dao2022flashattention}. FlashAttention-2 improves parallelism and work partitioning \citep{dao2023flashattention2}. These results matter because they lower the constant factors that make exact attention practical at scale.
-
-\subsection{KV-cache management and serving engines}
-For a Transformer with $N_{\text{layers}}$ layers and $H$ heads of dimension $d_{\text{head}}$, the KV-cache size for length $L$ with per-element storage $b$ bytes is
-\begin{equation}
-M_{\text{KV}} \approx 2 \cdot L \cdot N_{\text{layers}} \cdot H \cdot d_{\text{head}} \cdot b,
-\end{equation}
-growing linearly with both sequence length and model depth. Prefill scales as $\mathcal{O}(L^2)$ while decode scales as $\mathcal{O}(L)$, explaining why long prompts and long histories stress the system differently. PagedAttention and vLLM manage KV memory like virtual memory pages, substantially improving throughput at longer lengths \citep{kwon2023pagedattention}. SGLang introduces RadixAttention for prefix reuse across structured LM programs, relevant for agentic pipelines with repeated long prefixes \citep{zheng2024sglang}.
-
-\subsection{Serving efficiency as a dimension of long-context ability}
-Serving efficiency is not a deployment afterthought. Metrics including time-to-first-token (TTFT), prefill latency, decode throughput, peak memory, batch scalability, and cache reuse determine which context lengths are usable in practice. A model that performs well on benchmarks but becomes prohibitively slow under deployment does not fully realize its nominal capability.
-
-\section{Evaluation of Long-Context Ability}
-\label{sec:evaluation}
-
-\subsection{From retrieval sanity checks to reasoning tests}
-Needle-in-a-Haystack and related key-value retrieval tests are useful sanity checks but are too narrow to define long-context ability \citep{liu2024lost}. Position-sensitivity analysis shows that even models with long windows may systematically underuse middle-context information \citep{liu2024lost}.
-
-\subsection{Synthetic benchmarks}
-RULER introduces configurable synthetic tasks spanning retrieval, aggregation, and tracing, emphasizing the distinction between claimed and effective context size \citep{hsieh2024ruler}. $\infty$Bench pushes evaluation beyond 100K tokens with combined synthetic and realistic tasks \citep{zhang2024infinitebench}. BABILong scatters relevant facts through long natural text, measuring whether models can chain them reliably \citep{kuratov2024babilong}.
-
-\subsection{Realistic long-context benchmarks}
-LongBench provides a bilingual multi-task benchmark spanning QA, summarization, few-shot, and code completion \citep{bai2024longbench}. L-Eval warns that traditional n-gram overlap is misaligned with long-form answer quality \citep{an2023leval}. LongBench v2 raises the bar by focusing on realistic multi-task problems demanding deeper reasoning, suggesting the next bottleneck is not longer documents but stronger reasoning \citep{bai2025longbenchv2}.
-
-\subsection{Benchmark-to-capability mapping}
-\begin{itemize}[leftmargin=1.5em]
-  \item Needle-in-a-Haystack / key-value retrieval: basic retrieval and position robustness.
-  \item RULER retrieval: effective retrieval length under interference.
-  \item RULER aggregation and tracing: long-range reasoning over synthetic evidence.
-  \item LongBench / LongBench v2: realistic long-context understanding.
-  \item Serving benchmarks: practical utility under latency and memory constraints.
-\end{itemize}
-
-Two complementary metrics formalize the gap between claimed and usable context. If $\mathrm{Acc}(L)$ denotes performance at context length $L$, effective context length is
-\begin{equation}
-L_{\mathrm{eff}}(\tau)=\max \{L:\ \mathrm{Acc}(L)\ge \tau\},
-\end{equation}
-with $\tau$ a task-dependent threshold such as $0.8$. The decay slope
-\begin{equation}
-\Delta(L_1,L_2)=\frac{\mathrm{Acc}(L_2)-\mathrm{Acc}(L_1)}{\log L_2-\log L_1}
-\end{equation}
-captures how sharply performance degrades as context grows.
-
-\section{Experimental Analysis}
-\label{sec:experiments}
-
-We conduct three families of experiments designed to populate the five-dimensional framework of Section~\ref{sec:framework}. Experiment~A targets retrieval (effective retrieval length). Experiment~B targets reasoning across both synthetic scaling tests (RULER) and real documents (LongBench). Experiment~C targets system serving efficiency. All experiments compare two representative architectures: a dense Transformer (Llama-3.1-8B-Instruct) and a state-space model (Falcon3-Mamba-7B-Instruct). Both models are run with greedy decoding at bfloat16 precision on a single RTX 4090 (24\,GB). Llama uses \texttt{device\_map=auto}; Mamba uses \texttt{device\_map=none} on \texttt{cuda:0} due to CUDA-kernel stability issues with multi-device mapping.
-
-\subsection{Experiment A: Retrieval under controlled interference}
-
-We evaluate two RULER NIAH subtasks. \texttt{niah\_single\_1} embeds one target key-value pair in repetitive noise text. \texttt{niah\_multikey\_1} embeds four key-value pairs in natural essay text and queries the value for one key. The second task is substantially harder: it remains retrieval, but retrieval must compete with distractor keys, distractor numbers, and realistic textual interference. Each cell contains 500 examples.
-
-Table~\ref{tab:expa-main} summarizes the results. Llama is near-saturated on both tasks across all tested lengths (4K--32K). Falcon3-Mamba is perfect on single-key retrieval but collapses on multi-key: accuracy drops from 43.6\% at 4K to 21.4\% at 16K. This shows that ``retrieval'' is not a single homogeneous capability. A model may preserve one salient target through a long prompt while failing to bind the correct key to the correct value under interference.
+\subsection{Five dimensional analytical framework}
+Table~\ref{tab:framework} summarizes the analytical framework used throughout the report.
 
 \begin{table}[t]
 \centering
-\caption{Exp A accuracy (\%) on RULER NIAH retrieval. A dash indicates that 32K is not stable in the current hardware environment for Mamba.}
+\caption{Five dimensions of long-context ability.}
+\label{tab:framework}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.23\textwidth} 
+                            >{\raggedright\arraybackslash}X 
+                            >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Dimension} & \textbf{Question answered} & \textbf{Typical evaluation} \\
+\midrule
+Nominal context length & How many tokens can be admitted? & Claimed model or system limit \\
+[0.5em]
+Effective retrieval length & How far can relevant evidence still be found reliably? & NIAH, RULER retrieval \\
+[0.5em]
+Long-range reasoning ability & Can retrieved evidence be combined, tracked, or aggregated correctly? & RULER reasoning, BABILong, LongBench v1/v2 \\
+[0.5em]
+Inference-time extension effectiveness & How much usable context can be extended without retraining? & Positional extension, retrieval-augmented inference, long-context generation methods \\
+[0.5em]
+System serving efficiency & Can long contexts be served with acceptable latency, throughput, and memory? & TTFT, TPOT, throughput, peak memory \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Nominal context length.}
+This is the maximum context length claimed by a model or infrastructure stack. It is shaped by training length, positional encoding, implementation details, and the serving backend. It answers whether the input can be accepted, not whether it can be used well.
+
+\paragraph{Effective retrieval length.}
+This dimension measures whether the model can still locate the relevant evidence as the context grows and distractors accumulate. Retrieval tasks such as Needle-in-a-Haystack and RULER are natural probes \citep{liu2024lost, hsieh2024ruler}.
+
+\paragraph{Long-range reasoning ability.}
+Retrieval is only the first step. Long-context reasoning requires the model to chain variable assignments, count or rank frequent items, compare scattered claims, or synthesize multi-document evidence. Recent work suggests that this is a stricter bottleneck than simple retrieval \citep{hsieh2024ruler, kuratov2024babilong, bai2025longbenchv2}.
+
+\paragraph{Inference-time extension effectiveness.}
+Many long-context gains come not from retraining the backbone, but from changing how input positions are mapped, how long inputs are organized, or how historical information is utilized at inference time \citep{chen2023pi, peng2023yarn, ding2024longrope, jin2024selfextend, xiao2024infllm}. A separate subset of methods instead targets \emph{long-context generation}, where decode-time KV-cache retention and retrieval become the main bottlenecks \citep{xiao2023streamingllm, zhang2023h2o, li2024snapkv, liu2024kivi, wang2025fier}.
+
+\paragraph{System serving efficiency.}
+Even if model-level behavior is strong, long-context inference may still be limited by prefill latency, cache growth, memory fragmentation, or poor batching efficiency. Which factor dominates depends on workload: long-input understanding stresses prefill, whereas long-history generation stresses decode-time cache access. Practical long-context ability is therefore inseparable from serving efficiency \citep{dao2022flashattention, dao2023flashattention2, kwon2023pagedattention, zheng2024sglang}.
+
+\section{Technical Routes to Long-Context LLMs}
+\label{sec:survey}
+
+\subsection{Architectural scaling beyond standard attention}
+The central architectural challenge in long-context modeling is that the standard Transformer scales poorly with sequence length. Given queries $Q$, keys $K$, and values $V$, self-attention computes
+\begin{equation}
+\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\left(\frac{QK^\top}{\sqrt{d}}\right)V,
+\end{equation}
+where the $QK^\top$ term materializes pairwise interactions between all token positions. For a sequence of length $n$, this induces $\mathcal{O}(n^2)$ attention-score storage and $\mathcal{O}(n^2 d)$ compute. In long-document settings, the difficulty is not only arithmetic complexity but also memory traffic: the model must repeatedly move large activation tensors and, during generation, maintain a growing history.
+
+Work on architectural scaling therefore began from a simple question: can one preserve enough of attention's expressive power while reducing its all-to-all cost? A first family of answers replaces full attention with structured sparsity. Longformer introduces a sliding-window pattern augmented with a small set of global tokens \citep{beltagy2020longformer}. If each token attends only to a local window of width $w$ plus a limited global set, the effective complexity becomes approximately
+\begin{equation}
+\mathcal{O}(nwd), \qquad w \ll n.
+\end{equation}
+The gain comes from restricting long-range communication to a small number of designated positions. This design is well suited to tasks such as document classification or span extraction, where local context dominates and only a few tokens need global reachability. However, this hard-coded sparse pattern also imposes a structural bias: when a crucial dependency falls outside the predefined local or global attention paths, the relevant information cannot be exchanged directly and may have to propagate through several intermediate tokens across multiple layers.
+
+BigBird generalizes this idea by combining three edge types in the attention graph: local edges, random edges, and global edges \citep{zaheer2020bigbird}. The motivation is to approximate the expressive coverage of dense attention while retaining near-linear scaling. Local edges preserve neighborhood information, global edges support task-level routing, and random edges improve graph connectivity so that distant tokens remain reachable in a small number of steps. From a systems viewpoint, sparse attention reduces asymptotic cost; from a modeling viewpoint, it changes which long-range dependencies are easiest to represent. More broadly, this line of work illustrates a recurring theme in long-context modeling: \emph{efficiency is purchased by imposing structure on information flow}.
+
+The second architectural route is to move away from attention as the primitive for sequence interaction. State-space models (SSMs) compress the prefix into a recurrent hidden state and update that state token by token. A generic discrete-time SSM can be written as
+\begin{equation}
+h_t = A h_{t-1} + B x_t,\qquad y_t = C h_t,
+\end{equation}
+where $x_t$ is the current input, $h_t$ the latent state, and $y_t$ the output. The attraction of this formulation is that information propagation no longer requires explicit pairwise token-token interaction. In principle, the sequence can be processed in linear time and with bounded recurrent state size.
+
+The limitation of classical linear recurrences is equally clear: a fixed transition matrix $A$ can struggle to perform content-dependent routing. Mamba addresses this by making the state-space dynamics input selective \citep{gu2023mamba}. At a high level, it replaces fixed recurrence with token-conditioned recurrence:
+\begin{equation}
+(A_t,B_t,C_t)=g(x_t),\qquad
+h_t=A_t h_{t-1}+B_t x_t,\qquad
+y_t=C_t h_t.
+\end{equation}
+This selective mechanism makes the model more expressive than traditional fixed-parameter SSMs because the recurrence can choose what to retain, what to overwrite, and what to expose conditioned on the current token. Mamba-2 further places this line in a broader theoretical frame by connecting attention and SSMs through structured state space duality \citep{dao2024mamba2}. For the purposes of this report, the main implication is that long-context modeling need not be framed as ``attention versus recurrence'' in a purely oppositional sense; rather, both can be viewed as different parameterizations of long-range information flow with different efficiency-accuracy trade-offs.
+
+Hybrid models such as Jamba make this trade-off explicit \citep{lieber2024jamba}. Instead of betting entirely on one mechanism, they interleave attention blocks with Mamba-style recurrent blocks, using attention where exact content-based routing is valuable and recurrent updates where long-sequence efficiency matters more. This hybridization reflects a practical compromise: attention remains attractive for fine-grained content interaction, while recurrent or compressed mechanisms offer better scaling on long sequences.
+
+Taken together, architectural scaling has evolved from “make attention cheaper” to “rethink the sequence operator itself.” Sparse attention, recurrent state-space models, and hybrids each address the same computational bottleneck from different angles. While one important motivation is to enlarge usable context, these methods differ in what they preserve: sparse attention maintains token-level addressing at selected edges; SSMs preserve compact recurrent summaries; hybrids attempt to preserve both. This distinction matters later when interpreting retrieval and reasoning failures in our experiments, because different architectures do not merely scale differently; they fail differently.
+
+\subsection{Positional scaling and efficient context extension}
+
+Architectural redesign is expensive: it typically requires retraining from scratch or adopting a different backbone. A second major line of work therefore asks a more pragmatic question: if the base model is already strong, can we extend its usable context without changing the core architecture or repeating full-scale pretraining? This is the motivation behind positional extrapolation, positional interpolation, and related context-extension methods. Unlike new sequence architectures, these methods usually keep the Transformer backbone intact, modifying how positional information is represented or rescaled; in practice, however, many successful extensions still rely on a small amount of continued training or fine-tuning to stabilize behavior at longer lengths.
+
+The underlying issue is that many LLMs are trained only up to a finite context length $L_{\mathrm{train}}$. Even if inference code allows longer sequences, the positional encoding scheme may not extrapolate well beyond the range seen during training due to distribution shift. ALiBi addresses this by adding a head-specific linear bias directly to the attention logits:
+\begin{equation}
+e_{ij}^{(h)}=\frac{q_i^\top k_j}{\sqrt{d}} - m_h(i-j),
+\end{equation}
+where $m_h$ is the slope assigned to head $h$ \citep{press2022alibi}. The key idea is that positional information is injected through relative distance penalties rather than learned absolute vectors. Because the bias rule itself is length-agnostic, the model can extrapolate to longer sequences more naturally than models whose positional embeddings are trained only for a fixed window.
+
+The RoPE family takes a different approach. Rotary position embeddings encode token positions through rotations in feature space, but their geometric frequencies are calibrated to the training range. Naively applying RoPE beyond this range requires the model to operate on unseen rotation angles, which can distort attention scores and destabilize long-context behavior. Position Interpolation (PI) addresses this extrapolation problem by replacing direct positional extrapolation with interpolation: positions in the extended context are linearly compressed back into the range seen during training,
+\begin{equation}
+p' = p \cdot \frac{L_{\mathrm{train}}}{L_{\mathrm{test}}},
+\end{equation}
+where $p$ is the original position and $L_{\mathrm{test}}$ the desired target context length \citep{chen2023pi}. In effect, PI trades exact positional fidelity for smoother out-of-range behavior: the model sees a denser reparameterization of familiar positions rather than positions it has never encountered. Although the interpolation rule itself can be applied at inference time, strong empirical extensions typically use limited continued training to adapt the model to the compressed positional geometry.
+
+YaRN and LongRoPE refine this design space \citep{peng2023yarn, ding2024longrope}. YaRN improves the efficiency of RoPE-based context extension by modifying the interpolation behavior across frequency dimensions and reducing the amount of continued training needed for stable long-context adaptation. LongRoPE further relaxes the assumption of uniform rescaling, searching for non-uniform scaling factors across RoPE dimensions and token positions, and using progressive extension to push context windows toward million-token regimes. These methods are therefore better described not as purely training-free extensions, but as architecture-preserving and training-efficient adaptation techniques.
+
+From the perspective of long-document modeling, the common role of these methods is to improve \emph{admissibility}: they make longer inputs numerically and distributionally more tolerable for models whose positional mechanisms were originally calibrated to shorter contexts. They do not directly solve the downstream problems of retrieval under interference or reasoning over far-apart evidence. This distinction is central to the framework of Section~\ref{sec:framework}: positional extension can increase nominal context length without guaranteeing a proportional gain in effective retrieval or reasoning length.
+
+These methods are important because they have been among the most practically adopted approaches for open-source long-context adaptation. They are much cheaper than training a new long-sequence architecture from scratch, and they preserve strong short-context behavior in many cases. Still, they are best interpreted as \emph{window-extension techniques}, not as a complete answer to long-context ability. A model with successful RoPE scaling may still fail in long-range information retrieval or reasoning scenarios.
+
+
+\subsection{Inference-time memory and representation for long inputs}
+
+Beyond positional scaling, some methods improve long-input handling by reorganizing how the input sequence is represented and maintained during inference, without changing the pretrained backbone. They decide which parts of the input are stored at full resolution, which are compressed, and which distant units are retrieved when needed, allowing longer context to be used without enlarging dense attention uniformly.
+
+Self-Extend \citep{jin2024selfextend} implements a bi-level attention scheme: nearby tokens use fine-grained neighbor attention, while distant tokens are grouped and accessed coarsely. This trades some long-range precision for the ability to handle longer inputs without fine-tuning, useful for tasks like document QA and summarization. InfLLM \citep{xiao2024infllm} introduces explicit memory units for distant context. Relevant units are retrieved on demand, separating storage from active computation:
+\begin{equation}
+r_t = \mathrm{Retrieve}(q_t, M), \qquad
+\tilde{h}_t = f(h_t, r_t),
+\end{equation}
+where $r_t$ is the retrieved context and $\tilde{h}_t$ the representation used for prediction.
+
+Unlike retrieval-augmented generation, these methods operate over the input itself. They focus on efficiently representing, storing, and selectively accessing long input during inference, showing that extending usable context often requires restructuring rather than merely enlarging attention.
+
+\subsection{Long-context generation and KV-cache adaptation}
+A separate body of work is motivated not by long-input understanding, but by \emph{long-history or long-generation decoding}. Once a Transformer begins autoregressive generation, it typically stores keys and values for all previous positions. If the generated history is long, or if the model must continue from a long retained conversation, decode cost becomes increasingly dominated by KV cache access and memory bandwidth. This is the natural setting for KV-cache adaptation methods.
+
+StreamingLLM begins from the empirical observation that some early tokens act as ``attention sinks'': they receive persistent attention even when most of the prefix is old \citep{xiao2023streamingllm}. It therefore proposes to retain a small set of sink tokens together with a recent sliding window, instead of preserving the entire history. H$_2$O introduces a dynamic eviction rule based on accumulated attention importance, preserving heavy-hitter tokens that are repeatedly consulted \citep{zhang2023h2o}. SnapKV moves the selection decision earlier: it uses a short observation window to predict which cache entries will matter for future generation \citep{li2024snapkv}. KIVI attacks the problem from a compression perspective by quantizing keys and values asymmetrically \citep{liu2024kivi}. FIER treats long-context decode as a retrieval problem over compressed cache surrogates, aiming for fine-grained per-step selection \citep{wang2025fier}.
+
+Although these methods differ algorithmically, they can be summarized by a common objective:
+\begin{equation}
+\min_{\hat{K},\hat{V}} \ \mathrm{Cost}(\hat{K},\hat{V})
+\quad \text{s.t.} \quad
+\mathrm{Loss}_{\mathrm{decode}}(\hat{K},\hat{V}) \approx \mathrm{Loss}_{\mathrm{decode}}(K,V),
+\end{equation}
+where $(K,V)$ are the full caches and $(\hat{K},\hat{V})$ their retained, compressed, or retrieved approximations. In other words, the goal is to reduce memory or IO cost while preserving decode quality.
+
+For the present project, these methods are best treated as complementary system techniques rather than central experimental objects. They are highly relevant if the target application is persistent dialogue, agent rollouts, or long-form generation. They are less directly aligned with the long-input short-generation workloads used in our experiments. Stating this distinction explicitly helps avoid a common conceptual slippage in the literature, where ``long context'' is used to cover both long-input understanding and long-output generation even though the systems bottlenecks can differ substantially.
+
+
+\subsection{Serving systems for long contexts}
+Even if model-level long-context behavior is strong, deployment can fail at the systems layer. Long-context serving is governed by two phases with different bottlenecks. During \emph{prefill}, the model consumes the input prompt and computes internal states for all positions. During \emph{decode}, it produces new tokens autoregressively while reusing cached history. In Transformer-based systems, these two phases stress different resources.
+
+FlashAttention and FlashAttention-2 show that attention is often limited not by FLOPs alone, but by IO between high-bandwidth memory (HBM) and GPU on-chip memory (SRAM)\citep{dao2022flashattention, dao2023flashattention2}. By tiling attention computation so that intermediate blocks stay on chip as much as possible, these methods substantially reduce memory traffic without approximating the exact result. This matters directly for long-input understanding because prefill on long sequences can otherwise become dominated by activation movement rather than pure arithmetic.
+
+For autoregressive Transformers, KV-cache growth during decoding stage is approximately
+\begin{equation}
+M_{\mathrm{KV}} \approx 2 \cdot L \cdot N_{\mathrm{layers}} \cdot H \cdot d_{\mathrm{head}} \cdot b,
+\end{equation}
+where $L$ is context length, $H$ is the number of heads, $d_{\mathrm{head}}$ is the head dimension, and $b$ is the bytes per stored element. The factor of $2$ reflects separate storage for keys and values. This expression makes clear why long-generation workloads become increasingly  memory-bound: the cache grows linearly with retained history and is repeatedly read at every new token.
+
+The time behavior of the two phases is also different. Prefill under dense attention is roughly quadratic in input length because each new position participates in many pairwise interactions, whereas decode is closer to linear in retained history per generated token because each new query attends over the stored prefix:
+\begin{equation}
+T_{\mathrm{prefill}}(L) \sim \mathcal{O}(L^2), \qquad
+T_{\mathrm{decode}}(L, m) \sim \mathcal{O}(Lm),
+\end{equation}
+where $m$ is the number of newly generated tokens. This decomposition highlights a general systems fact: long-context serving is not governed by a single cost source, and different workloads stress prefill and decode to different degrees.
+
+Serving engines such as vLLM and SGLang target these systems bottlenecks at a higher level. vLLM introduces PagedAttention, which treats KV-cache allocation more like virtual memory management and greatly reduces fragmentation under many-request serving workloads \citep{kwon2023pagedattention}. SGLang emphasizes structured LM programs, prefix reuse, and efficient scheduling for workloads where many requests share long common prefixes \citep{zheng2024sglang}. These systems are crucial because they determine whether a nominally long-context model is actually deployable at the intended batch size, latency budget, and hardware profile.
+
+Taken together, serving systems complete the long-context picture by translating model-level capability into operational capability. A model may support long inputs architecturally, extrapolate positions successfully, and perform well on retrieval benchmarks, yet still be impractical if prefill is too slow or if decode-side memory management collapses under real workloads. This is why the systems dimension in our framework should be treated as co-equal with modeling and evaluation, rather than as a purely engineering afterthought.
+
+\section{Benchmarks and Evaluation}
+\label{sec:evaluation}
+
+Long-context benchmarks differ substantially in what they measure. Needle-in-a-Haystack probes basic retrieval and positional robustness \citep{liu2024lost}. RULER expands this into a controlled family of retrieval, aggregation, and tracing tasks, making it suitable for studying how effective context departs from nominal context \citep{hsieh2024ruler}. $\infty$Bench and BABILong move toward more complex long-context reasoning settings \citep{zhang2024infinitebench, kuratov2024babilong}. LongBench emphasizes realistic downstream tasks such as question answering, summarization, and code completion \citep{bai2024longbench}. LongBench v2 further argues that deeper reasoning, rather than merely longer documents, is now a central challenge \citep{bai2025longbenchv2}. L-Eval also highlights that naive lexical-overlap metrics can misrepresent long-form answer quality \citep{an2023leval}.
+
+For this reason, no single benchmark should be treated as a complete proxy for long-context ability. Retrieval tests are valuable sanity checks; synthetic reasoning tests isolate failure modes under controlled scaling; realistic task benchmarks capture end-task utility; and serving benchmarks determine whether any of the above remains practical. The experimental part of this report is designed accordingly, with a deliberate focus on \emph{long-input short-generation understanding} rather than long-history generation.
+
+Our experiments instantiate this perspective with three benchmark families. Experiment A uses two RULER NIAH retrieval subtasks, \texttt{niah\_single\_1} and \texttt{niah\_multikey\_1}, across 4K, 8K, 16K, and 32K where hardware permits. Experiment B1 uses three RULER reasoning tasks, variable tracking (VT), common words extraction (CWE), and frequent words extraction (FWE), under the same controlled length scaling. Experiment B2 uses four realistic tasks from LongBench: HotpotQA, Qasper, GovReport, and RepoBench-P. Experiment C evaluates serving behavior through TTFT, TPOT, throughput, and peak GPU memory.
+
+The scoring rules are benchmark-specific. RULER retrieval and reasoning are evaluated by exact answer-item coverage; for reasoning tasks, a prediction is counted as correct only if all required answer items appear in the output. LongBench tasks use task-specific metrics aligned with benchmark conventions: QA-F1 for HotpotQA and Qasper, Rouge-L F1 for GovReport, and edit similarity for RepoBench-P. These choices reflect the fact that long-context evaluation is inherently multi-metric because different benchmarks probe different capabilities.
+
+\section{Experiments}
+\label{sec:experiments}
+
+We evaluate two representative architectures: the dense Transformer \texttt{Meta/Llama-3.1-8B-Instruct} and the state-space model \texttt{tiiuae/Falcon3-Mamba-7B-Instruct}. All runs use greedy decoding with bfloat16 precision on a single RTX 4090 GPU with 24\,GB memory. For Llama, HuggingFace runs use \texttt{device\_map=auto}; for Mamba, multi-device mapping was avoided because the relevant CUDA kernel path was not stable in the current environment. All experiments follow a long-input short-generation regime. In Experiment C, output length is fixed to 128 tokens so that the benchmark reflects serving costs for long-context understanding rather than prolonged decoding.
+
+Several implementation details are important for interpretation. Each RULER result cell contains 500 examples. LongBench uses the project subset of 200 examples each for HotpotQA, Qasper, and GovReport, and 500 examples for RepoBench-P. For VT, we use an answer-only suffix that instructs the model to output only the final variable names; this improves output stability, but it also means that raw scores across VT, CWE, and FWE should be compared mainly within task rather than directly across tasks. Due to single-GPU memory constraints, Mamba LongBench runs use a 20K-token input budget; when the original context exceeds that budget, the tokenized context is truncated by retaining the trailing portion, which weakens direct comparability with Llama on a subset of samples.
+
+\subsection{Experiment A: retrieval is sensitive to interference, not just length}
+Experiment A tests whether a model can still recover target information as the prompt becomes longer and more cluttered. The distinction between the two tasks is crucial. \texttt{niah\_single\_1} is a single-target retrieval problem; \texttt{niah\_multikey\_1} requires retrieving the correct value \emph{and} binding it to the queried key under interference from other keys and values.
+
+Table~\ref{tab:expa-main} shows a sharp architectural contrast. Llama remains near-saturated across both tasks up to 32K. Falcon3-Mamba is also perfect on single-key retrieval up to 16K, but degrades severely on multi-key retrieval, from 43.6\% at 4K to 21.4\% at 16K. Thus, the retrieval bottleneck is not simply whether a salient fact survives in memory; it is whether the model preserves precise content addressing under distractors.
+
+\begin{table}[t]
+\centering
+\caption{Accuracy (\%) on RULER NIAH retrieval. Mamba 32K is omitted because it was not stable on the available hardware.}
 \label{tab:expa-main}
 \begin{tabular}{lcccc}
 \toprule
@@ -209,31 +252,24 @@ Falcon3-Mamba multi-key & 43.6 & 28.4 & 21.4 & -- \\
 \end{tabular}
 \end{table}
 
-\paragraph{Position sensitivity.}
-Figure~\ref{fig:expa-pos} shows position-binned accuracy heatmaps. Llama remains flat across all position buckets. Falcon3-Mamba exhibits a strong recency bias on \texttt{niah\_multikey\_1}: at 16K, the first 50\% of the context yields near-zero accuracy, and recovery begins only at approximately 70\% of the sequence length. This is more informative than a generic length effect: the model becomes increasingly dependent on recent evidence as context grows.
+Under the threshold $\tau=0.8$, both models have $L_{\mathrm{eff}}\ge 16$K on \texttt{niah\_single\_1}, but their effective retrieval lengths diverge sharply on \texttt{niah\_multikey\_1}: Llama remains above threshold through 32K, whereas Mamba falls below threshold already at 4K. This difference shows why effective context length must be reported per task family rather than per model.
 
-\paragraph{Error patterns.}
-In failed multi-key cases, Falcon3-Mamba often outputs a plausible number but not the correct one. The failure is less about total loss of the prompt and more about unstable key-value binding under interference. This aligns with the claim that state-space models can be efficient on long sequences yet weaker than attention-based models on exact content addressing in interference-heavy settings.
+Figure~\ref{fig:expa-pos} further reveals a positional asymmetry. Llama remains flat across position bins. Falcon3-Mamba shows a pronounced recency bias on \texttt{niah\_multikey\_1}; at 16K, the early and middle regions contribute very little usable signal, and accuracy improves only when the answer-bearing span is close to the end of the context. The dominant failure mode is therefore not total prompt loss but degraded binding reliability away from the recent portion of the sequence.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.78\textwidth]{../results/exp_a/llama31/position_sensitivity_llama31_heatmap.pdf}\\[0.8em]
-\includegraphics[width=0.78\textwidth]{../results/exp_a/mamba/position_sensitivity_mamba_heatmap.pdf}
-\caption{Position-sensitive accuracy heatmaps. Top: Llama-3.1-8B-Instruct is near-saturated across lengths and positions. Bottom: Falcon3-Mamba-7B-Instruct is stable on single-key retrieval but degrades sharply on multi-key, especially in early-to-middle positions.}
+\includegraphics[width=0.78\textwidth]{figures/position_sensitivity_llama31_heatmap.pdf}\\[0.8em]
+\includegraphics[width=0.78\textwidth]{figures/position_sensitivity_mamba_heatmap.pdf}
+\caption{Position-sensitive accuracy heatmaps for Experiment A. Llama remains stable across lengths and positions, while Falcon3-Mamba exhibits strong recency bias on multi-key retrieval.}
 \label{fig:expa-pos}
 \end{figure}
 
-\subsection{Experiment B1: Synthetic reasoning under context scaling}
-
-We evaluate three RULER reasoning tasks: variable tracking (VT), common-word extraction (CWE), and frequent-word extraction (FWE). Unlike Exp~A, the goal is to measure whether reasoning degrades as a synthetic task is stretched to longer contexts while answer information remains available. For VT, we inject an answer-format suffix to encourage concise variable-name output (max 64 new tokens). CWE and FWE use the raw task prompts (max 120 and 50 tokens respectively). Each cell contains 500 examples.
-
-Table~\ref{tab:expb-ruler} summarizes the results. For Llama, VT remains strong from 4K to 32K (99.8\% to 95.8\%), while CWE degrades sharply from 93.0\% at 4K to 0.6\% at 32K. FWE is non-monotonic, peaking at 86.0\% at 16K then dropping to 49.4\% at 32K. For Falcon3-Mamba, VT declines steadily from 55.0\% to 28.2\%, CWE is near floor at all lengths (0.2\% at 16K), and FWE is the best Mamba task but still degrades from 58.2\% to 44.4\%.
-
-Figure~\ref{fig:expb-ruler-compare} visualizes the length-accuracy curves per task. Two points stand out. First, scores across VT, CWE, and FWE should not be interpreted as a ranking of intrinsic task difficulty, because the tasks differ in output format, answer set size, and decoding budget. The comparison is meaningful within each task across lengths and architectures. Second, the architectural contrast is consistent: Llama preserves stronger performance at longer lengths on all three tasks.
+\subsection{Experiment B1: reasoning degrades heterogeneously across task types}
+Experiment B1 asks a stricter question: once the relevant information is present in the prompt, can the model still manipulate it correctly as context grows? Table~\ref{tab:expb-ruler} shows that the answer is highly task dependent.
 
 \begin{table}[t]
 \centering
-\caption{Exp B accuracy (\%) on RULER reasoning tasks.}
+\caption{Accuracy (\%) on RULER reasoning tasks.}
 \label{tab:expb-ruler}
 \begin{tabular}{lcccc}
 \toprule
@@ -249,104 +285,107 @@ Falcon3-Mamba FWE & 58.2 & 63.8 & 44.4 & -- \\
 \end{tabular}
 \end{table}
 
+For Llama, VT remains strong through 32K, but CWE collapses from 93.0\% at 4K to 0.6\% at 32K. FWE follows a different pattern, improving from 4K to 16K before dropping at 32K. For Falcon3-Mamba, all three tasks are weaker, and the degradation is especially severe on CWE. Figure~\ref{fig:expb-ruler-compare} shows that the shapes of the degradation curves differ not only across architectures but also across reasoning operations.
+
+Two conclusions follow. First, retrieval success does not imply reasoning robustness. Llama remains nearly perfect on retrieval at 32K, yet one reasoning task is already near failure at that length. Second, long-context reasoning should not be treated as a single scalar capability. Variable tracking, common-word extraction, and frequent-word extraction stress different operations, and the corresponding error curves are qualitatively different.
+
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.97\textwidth]{../results/exp_b/ruler_reasoning/ruler_reasoning_model_compare.pdf}
-\caption{Exp B RULER reasoning comparison curves. Each panel compares both models on one task as context length grows.}
+\includegraphics[width=0.97\textwidth]{figures/ruler_reasoning_model_compare.pdf}
+\caption{RULER reasoning performance as context grows. The curves differ strongly across both models and reasoning operations.}
 \label{fig:expb-ruler-compare}
 \end{figure}
 
-\subsection{Experiment B2: Realistic tasks on LongBench}
-
-We evaluate four LongBench tasks without artificial length bucketing: HotpotQA (multi-doc QA with multi-hop reasoning, QA-F1), Qasper (single-doc academic QA, QA-F1), GovReport (long-document summarization, Rouge-L F1), and RepoBench-P (code completion with repository context, edit similarity). Each task is run on its original samples. For Falcon3-Mamba, we apply a 20K-token input truncation budget to prevent OOM on the longest inputs.
-
-Table~\ref{tab:expb-longbench} reports the results. Llama outperforms Mamba on all four tasks. The gap is largest on HotpotQA (51.09 vs.\ 29.38 QA-F1), consistent with the multi-hop nature of the task. Both models struggle on GovReport and RepoBench-P, where even the better model reaches only 17.50 Rouge-L F1 and 9.95 edit similarity. These absolute scores indicate that real-world long-context tasks remain challenging for both architectures, with the Transformer retaining a clear advantage.
+\subsection{Experiment B2: realistic long-context tasks remain difficult}
+Experiment B2 moves from controlled synthetic tests to realistic downstream tasks. Table~\ref{tab:expb-longbench} reports the results. Llama outperforms Mamba on all four tasks. The largest gap appears on HotpotQA, where multi-document evidence integration is central. Both models achieve modest scores on GovReport and RepoBench-P, indicating that realistic long-context summarization and repository-scale code completion remain challenging even when nominal context length is sufficient.
 
 \begin{table}[t]
 \centering
-\caption{Exp B LongBench results. All metrics are task-specific (QA-F1 for HotpotQA/Qasper, Rouge-L F1 for GovReport, edit similarity for RepoBench-P).}
+\caption{LongBench subset results. Metrics are QA-F1 for HotpotQA and Qasper, Rouge-L F1 for GovReport, and edit similarity for RepoBench-P.}
 \label{tab:expb-longbench}
-\begin{tabular}{lccc}
+\begin{tabular}{lcc}
 \toprule
-Task (Metric) & Llama-3.1-8B & Falcon3-Mamba-7B \\
+Task & Llama-3.1-8B & Falcon3-Mamba-7B \\
 \midrule
-HotpotQA (QA-F1) & 51.09 & 29.38 \\
-Qasper (QA-F1) & 26.34 & 22.48 \\
-GovReport (Rouge-L) & 17.50 & 14.58 \\
-RepoBench-P (Edit Sim) & 9.95 & 8.71 \\
+HotpotQA & 51.09 & 29.38 \\
+Qasper & 26.34 & 22.48 \\
+GovReport & 17.50 & 14.58 \\
+RepoBench-P & 9.95 & 8.71 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Experiment C: System serving performance}
+These results should be interpreted conservatively. The Mamba runs use a 20K-token cap with tail-preserving truncation for overlength inputs, which affects a subset of examples, especially in RepoBench-P. Nonetheless, the qualitative conclusion is robust: the Transformer maintains a clear advantage on realistic long-context tasks, and the absolute difficulty of these tasks remains high for both models.
 
-We benchmark system efficiency using a synthetic fill text with fixed 128-token output generation. Three configurations are tested: Llama-3.1 on vLLM \citep{kwon2023pagedattention}, Llama-3.1 on HuggingFace Transformers, and Falcon3-Mamba on HuggingFace Transformers. Context lengths range from 4K to 32K; batch sizes include 1, 4, 8, and 16 (vLLM only). Metrics measured are TTFT, TPOT, throughput (tokens/s), and peak GPU memory.
+\subsection{Experiment C: usable context is limited by serving cost}
+Experiment C evaluates the systems dimension directly. We compare Llama on HuggingFace Transformers and vLLM, together with Mamba on HuggingFace Transformers. Four observations are most relevant.
 
-\paragraph{Prefill latency.}
-Figure~\ref{fig:expc-ttft} shows TTFT as a function of context length. For vLLM at batch size 1, TTFT grows from 380\,ms at 4K to 4331\,ms at 32K---roughly $\mathcal{O}(L^2)$ scaling. At batch size 16, the 32K TTFT reaches 57.9\,s, making interactive use infeasible. HuggingFace TTFT is comparable to vLLM at batch size 1 for the same model. Mamba HF shows similar prefill scaling (2257\,ms at 16K), consistent with its Transformer-like prefill stage despite recurrent decoding.
+\paragraph{Prefill dominates in the workload studied here.}
+Figure~\ref{fig:expc-ttft} shows that time to first token grows rapidly with context length for all tested configurations. For Llama on vLLM at batch size 1, TTFT increases from roughly 380\,ms at 4K to about 4.3\,s at 32K. At batch size 16, 32K TTFT reaches tens of seconds, making interactive use impractical. Since output length is fixed to 128 tokens, this benchmark primarily measures the serving cost of long-input understanding. Under this regime, prefill is the dominant bottleneck.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{../results/exp_c/fig1_ttft_vs_context.pdf}
-\caption{TTFT vs.\ context length. vLLM shown at batch sizes 1 and 16; HF backends at batch size 1. Prefill cost dominates at long contexts.}
+\includegraphics[width=0.85\textwidth]{figures/fig1_ttft_vs_context.pdf}
+\caption{TTFT as a function of context length. In this long-input short-generation setting, prefill cost grows quickly with input length and becomes the dominant latency source.}
 \label{fig:expc-ttft}
 \end{figure}
 
-\paragraph{Decode efficiency.}
-Mamba's TPOT is nearly constant at 73--74\,ms/token across all context lengths, reflecting the $\mathcal{O}(1)$ per-step cost of state-space recurrence. Llama's TPOT grows from 19 to 22\,ms/token (vLLM) and from 28 to 46\,ms/token (HF) as context increases, consistent with $\mathcal{O}(L)$ decode cost from growing KV-cache access.
-
-\paragraph{Throughput and batching.}
-Figure~\ref{fig:expc-throughput} shows throughput vs.\ batch size. At 4K, vLLM throughput scales from 46 to 176\,tok/s as batch size grows from 1 to 16. At 32K, throughput saturates at approximately 18\,tok/s regardless of batch size, because prefill dominates the end-to-end time. HF throughput is consistently lower: 32\,tok/s at 4K/bs1 vs.\ 46\,tok/s for vLLM.
+\paragraph{Decode-side behavior is informative but secondary.}
+Figure~\ref{fig:expc-tpot} shows that Mamba's TPOT is nearly flat across tested lengths, whereas Llama's TPOT increases with context length, especially under the HuggingFace backend. This matches the expected contrast between recurrent-state decoding and KV-cache-based decoding. However, this distinction is not the central systems bottleneck for the present project, because the workload does not emphasize long-history or long-generation decoding.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{../results/exp_c/fig3_throughput_vs_batch.pdf}
-\caption{Throughput vs.\ batch size. vLLM benefits from batching at shorter contexts but saturates under prefill dominance at 32K.}
+\includegraphics[width=0.85\textwidth]{figures/fig4_tpot_vs_context.pdf}
+\caption{TPOT as a function of context length. Mamba remains nearly flat, while Llama becomes more expensive as the attended history grows. This effect is more central to long-generation workloads than to the short-generation setting used here.}
+\label{fig:expc-tpot}
+\end{figure}
+
+\paragraph{Batching helps until prefill becomes dominant.}
+Figure~\ref{fig:expc-throughput} shows that vLLM substantially improves Llama throughput at shorter contexts, but the gain diminishes as context grows and prefill dominates end-to-end latency. In other words, batching is most effective when the system still has room to amortize decode and scheduling overhead; it is less effective when each request already spends most of its time in long-input prefill.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig3_throughput_vs_batch.pdf}
+\caption{Throughput versus batch size for Llama at 8K context. Batching improves serving efficiency, but the benefit is bounded by long-context prefill cost.}
 \label{fig:expc-throughput}
 \end{figure}
 
-\paragraph{Memory.}
-Figure~\ref{fig:expc-memory} shows peak GPU memory. vLLM memory is flat at 21.77\,GB across all configurations (model weights dominate). HF memory grows from 17.1\,GB (4K) to 20.2\,GB (16K) for Llama, and from 16.4\,GB (4K) to 21.8\,GB (16K) for Mamba. Memory is the binding constraint for 32K Mamba: the 24\,GB GPU cannot accommodate the combined model and KV-cache footprint.
+\paragraph{Memory accounting depends on the backend.}
+Figure~\ref{fig:expc-memory} requires careful interpretation. Under HuggingFace, peak allocated memory increases with context length, as expected. Under vLLM, measured peak memory remains almost flat because the engine pre-allocates a large KV-cache pool according to the configured GPU-memory utilization. Therefore, the flat vLLM curve should be read as a property of the allocator and reservation strategy in this setup, not as evidence that the working-set memory of long-context inference is truly length-invariant.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{../results/exp_c/fig2_memory_vs_context.pdf}
-\caption{Peak GPU memory vs.\ context length. vLLM memory is dominated by model weights; HF memory grows with context due to KV-cache.}
+\includegraphics[width=0.85\textwidth]{figures/fig2_memory_vs_context.pdf}
+\caption{Peak GPU memory versus context length. The vLLM curve mainly reflects pre-allocation under the chosen memory-utilization setting, while HuggingFace memory grows with context length.}
 \label{fig:expc-memory}
 \end{figure}
 
-\paragraph{Implications.}
-The system results confirm that prefill cost and memory, not decode speed, are the primary barriers to long-context serving under realistic batch workloads. The flat Mamba TPOT demonstrates the theoretical advantage of $\mathcal{O}(1)$ per-step decoding, but this advantage is offset by higher absolute decode cost and memory constraints that prevent Mamba from reaching 32K on commodity hardware.
-
-\subsection{Summary of experimental findings}
-Three patterns emerge across experiments. First, retrieval failure is task-dependent: single-key success does not imply multi-key robustness, and the gap widens with context length. Second, reasoning under context scaling reveals heterogeneous degradation: within the same model, variable tracking is much more stable than common-word extraction, suggesting that the reasoning operation itself---not just context length---determines stability. Third, system constraints interact with model architecture to define usable context: Mamba's stable TPOT is compromised by memory limits that prevent 32K evaluation, while Llama's strong retrieval and reasoning are available at 32K but with rapidly growing prefill cost. These patterns jointly support the central thesis: long-context ability is not a scalar but a joint function of architecture, task, and infrastructure.
+Taken together, these results show that system efficiency is not an auxiliary consideration. It determines which nominal context lengths remain usable under realistic latency and memory budgets. In the long-input understanding regime studied here, the most immediate serving barrier is prefill and input-time memory cost, not prolonged decode. In our environment, this constraint is especially visible for Mamba at 32K, which is excluded by single-GPU memory limits before model quality can even be evaluated.
 
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{Long-context ability is not a single dimension}
-The experiments confirm what the survey suggests: neither retrieval, reasoning, nor serving efficiency alone captures long-context ability. Falcon3-Mamba is perfect on single-key retrieval yet fails dramatically on multi-key binding. Llama maintains strong variable tracking through 32K while common-word extraction collapses to near-zero. This task-dependent degradation pattern is consistent across both architectures, reinforcing that ``long-context'' is an umbrella term for distinct capabilities that can fail independently.
+\subsection{Long-context ability is inherently non-scalar}
+The experiments consistently reject any one-number view of long-context ability. Falcon3-Mamba is perfect on single-key retrieval up to 16K, but fails badly on multi-key retrieval. Llama is near-perfect on retrieval at 32K, but one synthetic reasoning task collapses at that same length. Serving results further show that a context length can be nominally supported and even accurate, yet impractical because prefill latency becomes too large. These are qualitatively different failure modes and should not be merged into a single score.
 
-\subsection{Nominal vs.\ effective context}
-The gap between nominal and effective context is large and task-dependent. Llama's nominal 128K window maps to near-perfect retrieval effectiveness at 32K, but CWE reasoning effectiveness drops below 50\% by 16K. Mamba's nominal 32K is cut to 16K by memory constraints before task performance is even considered. This suggests that $L_{\mathrm{eff}}$ should be reported per task family rather than as a single number, and that system feasibility should be a first-class constraint on claimed capability.
+\subsection{Nominal context and effective context must be separated}
+The gap between nominal and effective context is both real and task dependent. For retrieval under interference, Llama remains effective throughout the tested range, whereas Mamba does not. For reasoning, even Llama's effective length varies sharply by task. This suggests that future evaluations should report effective context by capability family, for example retrieval, aggregation, tracing, summarization, and serving feasibility, rather than only by a model-wide advertised window.
 
-\subsection{Architecture matters, but not uniformly}
-The Transformer retains a clear advantage on retrieval under interference and on reasoning stability across our tested range. The state-space model's advantage is not in accuracy but in decode efficiency: Mamba's constant per-step cost is genuine and measurable. However, this efficiency is offset by weaker content-addressable retrieval and larger absolute per-token latency. The practical conclusion is comparative: different architectures fail differently, and the failure mode matters for downstream use.
+\subsection{Architecture matters, but so does the operation being tested}
+The Transformer advantage in this study is clearest when exact content addressing and multi-span integration matter. The state-space model shows its strongest relative benefit in decode scaling, not in retrieval or end-task reasoning accuracy. This does not imply that SSMs are categorically inferior for long context; rather, it shows that architectural comparisons are meaningful only when tied to the underlying operation of interest.
 
-\subsection{System constraints as first-class factors}
-Exp~C demonstrates that prefill cost and memory, not model quality, are the limiting factors for long-context deployment. vLLM throughput saturates at 18\,tok/s at 32K regardless of batch size, and 32K Mamba is not reachable on a 24\,GB GPU. These are not mere engineering details; they define which context lengths are usable. The serving dimension should be evaluated alongside retrieval and reasoning, not as an afterthought.
+\subsection{Serving should be treated as part of evaluation, with workload made explicit}
+Long-context research often reports model quality and serving cost separately. Our results suggest that this separation is too weak. If a context length can only be served with prohibitive TTFT or requires memory allocation strategies unavailable on target hardware, then the corresponding capability is only partially realized. At the same time, system conclusions must be workload-specific: in our long-input short-generation setting, prefill is the main bottleneck, whereas long-history generation would place more emphasis on KV-cache management and decode-side IO. Serving feasibility should therefore be treated as a first-class component of long-context evaluation, but always with the target workload stated explicitly.
 
 \subsection{Limitations}
-Our study has several limitations. The model set is small (two architectures) and the hardware is restricted to a single 24\,GB GPU. The prompt policy is task-dependent: VT uses an answer-format suffix that may inflate scores relative to CWE and FWE, limiting cross-task score comparison. LongBench tasks are not length-bucketed, which prevents straightforward length-degradation analysis. The system benchmark uses synthetic fill text rather than real prompts, which may understate KV-cache access patterns. The Mamba 32K gap is a hardware constraint, not an architectural claim; on larger GPUs, 32K may be reachable and should be evaluated.
+This report has several limitations. The empirical study covers only two models and one hardware profile, so the architectural conclusions are directional rather than exhaustive. The LongBench evaluation uses a local scoring implementation rather than the official benchmark harness, although the metric definitions follow the task conventions. Mamba cannot be evaluated at 32K in the current single-GPU setup, and its LongBench results are partially affected by tail-preserving truncation. Inference-time extension methods are discussed in the survey but are not benchmarked experimentally in a controlled ablation. Experiment C uses synthetic filler prompts to isolate long-input serving behavior, which simplifies interpretation but does not capture every semantic workload pattern, especially long-history generation.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-This report surveyed long-context LLMs through five dimensions---nominal context length, effective retrieval, long-range reasoning, inference-time extension, and system serving efficiency---and presented experimental evidence across retrieval, reasoning, and system benchmarks. The survey shows that no single technical route fully determines long-context ability. The experiments confirm that architecture, task structure, and system constraints jointly determine usable context.
+This report argued that long-context ability should be understood as a joint property of model architecture, inference strategy, task structure, and system realization. The survey component organized the field into five dimensions: nominal context length, effective retrieval length, long-range reasoning ability, inference-time extension effectiveness, and system serving efficiency. The empirical component focused specifically on long-input short-generation understanding and showed that these dimensions can diverge sharply in practice.
 
-The empirical findings are consistent with the survey's main thesis. Retrieval is not monolithic: single-key success does not transfer to multi-key robustness. Reasoning degrades heterogeneously: some operations remain stable at 32K while others collapse at 16K. System constraints define the boundary of what is empirically testable: prefill latency makes 32K serving slow even with optimized engines, and GPU memory excludes 32K for state-space models on commodity hardware.
-
-The practical message is that long-context evaluation, model comparison, and system design should all account for this multi-dimensional nature. Reporting a single context length or a single benchmark score is insufficient. Effective context should be reported per task family, and serving feasibility should be treated as a first-class evaluation criterion alongside accuracy.
+Three conclusions are especially clear. First, large nominal windows do not guarantee reliable use of long inputs. Second, retrieval and reasoning are separable: a model may still find evidence while failing to use it correctly. Third, serving efficiency defines the practical boundary of long-context capability just as much as benchmark accuracy does, but the relevant bottleneck depends on workload. For the long-input understanding tasks studied here, prefill is the main systems constraint; for long-history generation, decode-side KV-cache methods become more central. This suggests that long-context evaluation should become more capability-specific and more system-aware, and that architectural claims should be tested against both controlled synthetic probes and realistic downstream tasks.
 
 \bibliographystyle{plainnat}
 \bibliography{references}

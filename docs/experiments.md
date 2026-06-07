@@ -66,7 +66,7 @@
 
 ## Exp C：系统性能测试
 
-**问题**：在真实 serving 场景下，不同架构、不同推理后端、不同推理优化方法的吞吐与延迟如何？
+**问题**：在真实 serving 场景下，长上下文的可用性主要受哪一种系统成本限制：prefill 延迟、decode 成本，还是显存占用？
 
 **模型**：
 - Llama-3.1-8B-Instruct（Dense Transformer，主线）
@@ -78,20 +78,19 @@
 |---|---|
 | 架构 | Llama（Transformer）/ Falcon3-Mamba（SSM） |
 | Serving backend（仅 Llama） | HuggingFace Transformers / vLLM |
-| Context length | 4K、8K、16K、32K |
-| Batch size | 1、4、8、16 |
-| Output length | 固定 128 tokens |
+| Context length | `C1` 为 4K、8K、16K；`C3` 为 8K、16K |
+| Batch size | `C1/C2` 固定 1；`C3` 扫 batch |
+| Output length | `C1` 用 1 token；`C2/C3` 用固定长输出 |
+
+**实现脚本**：
+1. `bench_prefill_hf.py`：Llama HF vs Mamba HF，测 `TTFT + peak memory`
+2. `bench_decode_hf.py`：Llama HF vs Mamba HF，测 `TPOT`
+3. `bench_backend_llama.py`：Llama HF vs Llama vLLM，测 `requests/s / completion time / OOM`，并从 HF 子结果汇总 `max batch`
 
 **指标**：
 - TTFT（time to first token）
 - TPOT（time per output token）
-- Throughput（tokens/s）
 - Peak GPU memory
-
-**核心图**：
-1. TTFT vs. context length（Llama HF/vLLM + Mamba HF 并列）
-2. Peak memory vs. context length（同上）
-3. Throughput vs. batch size（Llama HF/vLLM 对比）
 
 ---
 

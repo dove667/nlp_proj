@@ -12,7 +12,7 @@ Topic: **What Determines Long-Context Ability in LLMs? A Survey with Experimenta
 - `docs/report_outline.md` — Report outline
 - `src/exp_a/` — Exp A, RULER NIAH retrieval
 - `src/exp_b/` — Exp B, split into RULER reasoning (length-extended reasoning) and LongBench (real tasks on original samples)
-- `src/exp_c/` — Exp C, serving performance benchmarks (TTFT, TPOT, throughput, peak memory)
+- `src/exp_c/` — Exp C, reorganized into three benchmark scripts plus one unified analysis script
 - `src/data/` — RULER data preparation notes
 - `src/utils.py` — Shared I/O and model utilities
 - `results/` — Experiment output directory
@@ -77,7 +77,7 @@ PY
 - Data sources: `RULER + LongBench`
 - **Exp A** uses RULER NIAH subtasks: `niah_single_1`, `niah_multikey_1`
 - **Exp B** covers two classes of evaluation: RULER reasoning (reasoning degradation under length extension) and LongBench (raw-sample real-world tasks)
-- **Exp C** focuses on TTFT, TPOT, throughput, and peak GPU memory
+- **Exp C** now separates HF prefill, HF decode, and Llama HF-vs-vLLM backend comparison
 
 Model lineup:
 
@@ -102,7 +102,7 @@ See [experiment design doc](docs/experiments.md) for details.
 - `docs/report_outline.md` — 报告提纲
 - `src/exp_a/` — Exp A，RULER NIAH retrieval
 - `src/exp_b/` — Exp B，拆分为 RULER reasoning（长度扩展推理）与 LongBench（原始样本真实任务）
-- `src/exp_c/` — Exp C，serving 性能测试（TTFT、TPOT、throughput、peak memory）
+- `src/exp_c/` — Exp C，重组为三个 benchmark 脚本和一个统一分析脚本
 - `src/data/` — RULER 数据准备说明
 - `src/utils.py` — 共享 I/O 与模型工具函数
 - `results/` — 实验输出目录
@@ -166,7 +166,7 @@ PY
 - 数据来源：`RULER + LongBench`
 - **Exp A** 使用 RULER 下的 NIAH 子任务：`niah_single_1`、`niah_multikey_1`
 - **Exp B** 同时包含两类定义不同的评测：RULER reasoning 做长度扩展下的推理退化分析，LongBench 直接跑原始样本
-- **Exp C** 关注 TTFT、TPOT、throughput、peak GPU memory
+- **Exp C** 现在拆成三部分：HF prefill、HF decode、Llama HF-vs-vLLM backend 对比
 
 模型主线：
 

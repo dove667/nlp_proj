@@ -43,13 +43,6 @@ def load_optional(results_dir: Path, filename: str) -> pd.DataFrame:
     return pd.DataFrame(load_rows(path))
 
 
-def load_optional_csv(results_dir: Path, filename: str) -> pd.DataFrame:
-    path = results_dir / filename
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_csv(path)
-
-
 def style() -> None:
     plt.rcParams.update({"font.size": 11, "axes.labelsize": 12, "xtick.labelsize": 11, "ytick.labelsize": 11})
 
@@ -203,8 +196,7 @@ def main() -> None:
     style()
 
     prefill_df = load_optional(args.results_dir, "prefill_hf.jsonl")
-    decode_csv_df = load_optional_csv(args.results_dir, "c2_decode_prompt_len_sweep_summary.csv")
-    decode_df = decode_csv_df if not decode_csv_df.empty else load_optional(args.results_dir, "decode_hf.jsonl")
+    decode_df = load_optional(args.results_dir, "decode_hf.jsonl")
     backend_df = load_optional(args.results_dir, "backend_llama.jsonl")
 
     plot_prefill(prefill_df, out_dir)

@@ -21,6 +21,10 @@ from common import (
 )
 
 
+def count_new_tokens(outputs, input_ids) -> int:
+    return int(outputs.shape[1] - input_ids.shape[1])
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", choices=list(MODEL_PATHS), default=list(MODEL_PATHS))
@@ -43,21 +47,28 @@ def run_single_model(args: argparse.Namespace) -> None:
             print(f"OOM while loading {model_name}; skipping this model")
             torch.cuda.empty_cache()
             continue
-        prompt_text = make_continuation_prompt(tokenizer, args.prompt_len)
-        input_ids, attention_mask = make_prompt_tensors(tokenizer, prompt_text, 1, args.device)
-        actual_prompt_len = int(input_ids.shape[-1])
 
         for output_len in args.output_lens:
+            prompt_text = make_continuation_prompt(tokenizer, args.prompt_len, output_len)
+            input_ids, attention_mask = make_prompt_tensors(tokenizer, prompt_text, 1, args.device)
+            actual_prompt_len = int(input_ids.shape[-1])
             print(
                 f"[{model_name}] prompt_len={actual_prompt_len} target_prompt_len={args.prompt_len} output_len={output_len} ...",
                 flush=True,
             )
 
             for _ in range(args.n_warmup):
-                hf_generate(model, tokenizer, input_ids, attention_mask, output_len)
+                hf_generate(
+                    model,
+                    tokenizer,
+                    input_ids,
+                    attention_mask,
+                    output_len,
+                )
             sync_cuda(args.device)
 
             tpot_ms_list: list[float] = []
+            actual_new_tokens_list: list[int] = []
             for _ in range(args.n_runs):
                 _, first_token_ms = time_hf_generate(
                     model,
@@ -67,7 +78,7 @@ def run_single_model(args: argparse.Namespace) -> None:
                     1,
                     args.device,
                 )
-                _, total_ms = time_hf_generate(
+                outputs, total_ms = time_hf_generate(
                     model,
                     tokenizer,
                     input_ids,
@@ -75,7 +86,15 @@ def run_single_model(args: argparse.Namespace) -> None:
                     output_len,
                     args.device,
                 )
-                tpot_ms_list.append((total_ms - first_token_ms) / max(output_len - 1, 1))
+                actual_new_tokens = count_new_tokens(outputs, input_ids)
+                if actual_new_tokens <= 1:
+                    continue
+                actual_new_tokens_list.append(actual_new_tokens)
+                tpot_ms_list.append((total_ms - first_token_ms) / max(actual_new_tokens - 1, 1))
+
+            if not tpot_ms_list:
+                print(f"  no usable decode run for output_len={output_len}, skipping")
+                continue
 
             row = {
                 "experiment": "decode_hf",
@@ -86,6 +105,7 @@ def run_single_model(args: argparse.Namespace) -> None:
                 "target_prompt_len": args.prompt_len,
                 "batch_size": 1,
                 "output_len": output_len,
+                "avg_actual_output_len": sum(actual_new_tokens_list) / len(actual_new_tokens_list),
                 "ttft_ms": None,
                 "tpot_ms": sum(tpot_ms_list) / len(tpot_ms_list),
             }

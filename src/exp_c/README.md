@@ -16,6 +16,8 @@
   - `continuation prompt + long generation`，`bs=1`
   - 指标：`TPOT`
   - 默认 `prompt_len=256`、`output_len=1024`
+  - prompt 会显式要求模型至少生成目标长度，减少提前停止
+  - TPOT 按真实生成的新 token 数计算，并额外记录 `avg_actual_output_len`
   - 可选 `--output_lens 256 512 1024` 做小 ablation
 
 - `bench_backend_llama.py`

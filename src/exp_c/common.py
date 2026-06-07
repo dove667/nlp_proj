@@ -24,12 +24,15 @@ CAPACITY_BATCH_SIZES = [1, 2, 4, 8, 16]
 DECODE_PROMPT_LEN = 256
 DECODE_OUTPUT_LEN = 1024
 FILL_TEXT = "The quick brown fox jumps over the lazy dog. "
-CONTINUATION_PREFIX = (
-    "Continue the text coherently and directly. "
-    "Do not explain what you are doing.\n\n"
+CONTINUATION_PREFIX_TEMPLATE = (
+    "You are completing a continuation-only generation task. "
+    "Continue the given prefix directly and keep writing fluent natural text. "
+    "Do not answer with meta commentary, bullet points, or explanations. "
+    "Do not stop early. Even if the text feels complete, keep extending it naturally until you have produced at least {target_output_len} new tokens. "
+    "Do not write an ending marker such as 'The End'.\n\n"
     "Prefix:\n"
 )
-CONTINUATION_SUFFIX = "\n\nContinue:\n"
+CONTINUATION_SUFFIX = "\n\nContinuation:\n"
 
 
 def ensure_offline_env() -> None:
@@ -93,8 +96,9 @@ def make_prompt_tensors(tokenizer: Any, prompt_text: str, batch_size: int, devic
     return input_ids, attention_mask
 
 
-def make_continuation_prompt(tokenizer: Any, target_prompt_len: int) -> str:
-    prefix_ids = tokenizer.encode(CONTINUATION_PREFIX, add_special_tokens=False)
+def make_continuation_prompt(tokenizer: Any, target_prompt_len: int, target_output_len: int) -> str:
+    prefix_text = CONTINUATION_PREFIX_TEMPLATE.format(target_output_len=target_output_len)
+    prefix_ids = tokenizer.encode(prefix_text, add_special_tokens=False)
     suffix_ids = tokenizer.encode(CONTINUATION_SUFFIX, add_special_tokens=False)
     available = max(target_prompt_len - len(prefix_ids) - len(suffix_ids), 1)
     filler_ids = make_fill_ids(tokenizer, available)
@@ -129,18 +133,22 @@ def hf_generate(
     input_ids: torch.Tensor,
     attention_mask: torch.Tensor,
     max_new_tokens: int,
+    min_new_tokens: int | None = None,
 ) -> torch.Tensor:
+    generation_kwargs = {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "max_new_tokens": max_new_tokens,
+        "do_sample": False,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "pad_token_id": tokenizer.pad_token_id,
+        "use_cache": True,
+    }
+    if min_new_tokens is not None:
+        generation_kwargs["min_new_tokens"] = min_new_tokens
     with torch.no_grad():
-        return model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            temperature=1.0,
-            top_p=1.0,
-            pad_token_id=tokenizer.pad_token_id,
-            use_cache=True,
-        )
+        return model.generate(**generation_kwargs)
 
 
 def time_hf_generate(
@@ -150,10 +158,18 @@ def time_hf_generate(
     attention_mask: torch.Tensor,
     max_new_tokens: int,
     device: str,
+    min_new_tokens: int | None = None,
 ) -> tuple[torch.Tensor, float]:
     sync_cuda(device)
     t0 = time.perf_counter()
-    outputs = hf_generate(model, tokenizer, input_ids, attention_mask, max_new_tokens)
+    outputs = hf_generate(
+        model,
+        tokenizer,
+        input_ids,
+        attention_mask,
+        max_new_tokens,
+        min_new_tokens=min_new_tokens,
+    )
     sync_cuda(device)
     elapsed_ms = (time.perf_counter() - t0) * 1000
     return outputs, elapsed_ms
